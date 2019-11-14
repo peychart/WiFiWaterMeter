@@ -833,7 +833,7 @@ void setup(){
   MDNS.addService("http", "tcp", 80);
   Serial_print("HTTP server started\n");
 
-  NTP.begin("pool.ntp.org", -10, false);
+  NTP.begin("pool.ntp.org", TIMEZONE, false);
   NTP.setInterval(3600);
 }
 

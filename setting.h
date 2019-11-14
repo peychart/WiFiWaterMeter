@@ -9,6 +9,8 @@ unsigned short ResetConfig =  2;     //Change this value to reset current config
 //#define MEMORYLEAKS           10000L
 #define SSIDCount()           3
 
+#define TIMEZONE              -10
+
 #define COUNTERPIN            D5
 #define DEBOUNCE_DELAY        50L
 #define MULTIPLIER            5L     //Deciliter per pulse...
