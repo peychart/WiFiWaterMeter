@@ -23,18 +23,23 @@
 
 //Avoid to change the following:
 #define ulong                     long unsigned int
-#define INFINY                    60000L
+#define INFINY                    60000UL
 String                            hostname(DEFAULTHOSTNAME);    //Can be change by interface
 String                            ssid[SSIDCount()];            //Identifiants WiFi /Wifi idents
 String                            password[SSIDCount()];        //Mots de passe WiFi /Wifi passwords
-String                            counterName(DEFAULTHOSTNAME), leakMsg(WATERLEAK_MESSAGE);
-ulong                             counterValue(0L), multiplier(MULTIPLIER);
+String                            counterName(DEFAULTHOSTNAME), leakMsg(WATERLEAK_MESSAGE), ntpServer(NTPSERVER);
+short                             localTimeZone(TIMEZONE);
+ulong                             counterValue(0UL), multiplier(MULTIPLIER);
 bool                              WiFiAP(false);
 #ifdef DEFAULTWIFIPASS
   ushort                          nbWifiAttempts(MAXWIFIRETRY), WifiAPTimeout;
 #endif
-ulong                             next_reconnect(0L), next_dataStorage(0L), next_leakCheck(0L), next_leakDetected(0L),
-                                  leakNotifPeriod(max(LEAKNOTIF_PERIOD, 3600000L)), maxConsumTime(min(MAXCONSUM_TIME, 3540000L));
+#define MIN_LEAKNOTIF_PERIOD      3600000UL
+#define MAX_LEAKNOTIF_PERIOD      25200000UL
+#define MIN_MAXCONSUM_TIME        60000UL
+#define MAX_MAXCONSUM_TIME        3600000UL
+ulong                             next_reconnect(0UL), next_dataStorage(0UL), next_dataFileStorage(0UL), next_leakCheck(0UL), next_leakDetected(0UL),
+                                  leakNotifPeriod(MIN_LEAKNOTIF_PERIOD), maxConsumTime(MIN_MAXCONSUM_TIME);
 ushort                            leakStatus(0);
 volatile bool                     intr(false);
 std::map<ulong,ulong>             dailyData;
@@ -72,11 +77,12 @@ std::vector<ushort>               mqttEnable(0);
 bool notifyProxy(ushort, String="");
 bool readConfig(bool=true);
 void writeConfig();
+ulong time(bool b=false);
 
-inline bool isNow(ulong v)  {ulong ms(millis()); return((v<ms) && (ms-v)<INFINY);}  //Because of millis() rollover:
-
-inline ulong getCounter()   {return counterValue/10L;}
-inline String getIndex()    {return String(getCounter(), DEC);}
+inline bool isNow(ulong v)       {ulong ms(millis()); return((v<ms) && (ms-v)<INFINY);}  //Because of millis() rollover:
+inline bool isTimeSynchronized() {return(now()!=(long)(millis()/1000UL));}
+inline ulong getCounter()        {return counterValue/10L;}
+inline String getIndex()         {return String(getCounter(), DEC);}
 
 bool addMQTT(ushort i, ushort j){bool isNew(false);
   std::vector<String> s;
@@ -151,16 +157,17 @@ As long as no SSID is set and it is not connected to a master, the device acts a
     WEB_F("none");
 #endif
     WEB_F("\" on: 192.168.4.1.<br><br>\n<table style='width: 100%'>\n\
-<th style='text-align:left;'><h3>Network name:</h3></th>\n<th style='text-align:left;'><h3>New counter value:</h3></th>\n<th style='text-align:left;'><h3>Reboot device:</h3></th>\n\
+<th style='text-align:left;'><h3>Network name:</h3></th>\n<th style='text-align:left;'><h3>NTP server - TimeZone:</h3></th>\n<th style='text-align:left;'><h3>Reboot device:</h3></th>\n\
 <tr style='white-space: nowrap;'><td style='text-align:left;'>\n<form method='POST'>\n");
-    sendHTML_inputText(F("hostname"), hostname, "size='10'");
+    sendHTML_inputText(F("hostname"), hostname, "style='width:150px'");
     sendHTML_button("", F("Submit"), F("onclick='submit();'"));
     WEB_F("</form>\n</td><td style='text-align: left;'>\n<form method='POST'>");
-    sendHTML_inputText(F("initialValue"), getIndex(), "size='15'");
-    WEB_F("</form>\n</td><td style='text-align: left;'>\n<form method='POST'>");
-    sendHTML_button(F("Clear"), F("Clear"), F("onclick='submit();'")); sendHTML_checkbox("reboot", true, "style=\"display:none\"");
-    WEB_F("</form>\n</td></tr></table>\n\
-<br><h3>Network connection:</h3><table><tr>");
+    sendHTML_inputText(F("ntpServer"), ntpServer, "style='width:200px'");
+    sendHTML_inputNumber(F("localTimeZone"), String(localTimeZone, DEC), "min=-11 max=11 size=2 style='width:60px'");
+    sendHTML_button("", F("Submit"), F("onclick='submit();'"));
+    WEB_F("</form>\n</td><td style='text-align: center;'>\n<form method='POST'>");
+    sendHTML_button(F("reboot"), F("Save Data"), F("onclick='submit();'")); sendHTML_checkbox("reboot", true, "style=\"display:none\"");
+    WEB_F("</form>\n</td></tr></table>\n<br><h3>Network connection:</h3><table><tr>");
     for(ushort i(0); i<SSIDCount(); i++){
       WEB_F("<td>\n<form method='POST'><table>\n<tr><td>SSID ");
       WEB_S(String(i+1, DEC));
@@ -176,7 +183,7 @@ As long as no SSID is set and it is not connected to a master, the device acts a
 </div></div>\n");
 //                             -----------------------------------------------------------------
     WEB_F("<header>\n\
- <div style='text-align:right;white-space: nowrap;'><p><span class='close' onclick='showHelp();'>?</span>&nbsp;&nbsp;</p></div>\n\
+ <div style='text-align:right;white-space: nowrap;'><p><span class='close' onclick='showHelp();'>?&nbsp;</span></p></div>\n\
  </header>\n\
 \n\
 <!MAIN SECTION>\n\
@@ -188,13 +195,14 @@ As long as no SSID is set and it is not connected to a master, the device acts a
 	<canvas id='canvasOdometer' width='100' height='40' onclick='initConfPopup(this);'></canvas>\n\
 	<input id='OdometerValue' style='width:150px;display:none;' value='");
     WEB_S(String(getCounter()/1000, DEC) + "." + String(getCounter()%1000, DEC));
-    WEB_F("' onblur='initConfPopup(this);'>\n\
-</form></td><td>\n<form id='1'>\n\
-	<button id='leakStatusOk' name='status' class='safe' title='' onclick='initConfPopup(this);' style='display:none;'>\n\
-	<button id='leakStatusFail' name='status' class='warning blink' title='Warning: probable water leak!' onclick='initConfPopup(this);' style='display:inline-block;'></button>\n\
-</form></td></tr></table>\n");
+    WEB_F("' onblur='initConfPopup(this);'>\n</form></td><td>\n<form id='1'>\n\
+	<button id='leakStatusOk' name='status' class='safe' title='' onclick='initConfPopup(this);' style='display:");
+  WEB_S(leakStatus ?"none" :"inline-block");
+  WEB_F(";'>\n<button id='leakStatusFail' name='status' class='warning blink' title='Warning: probable water leak!' onclick='initConfPopup(this);' style='display:");
+  WEB_S(leakStatus ?"inline-block" :"none");
+  WEB_F(";'></button>\n</form></td></tr></table>\n");
 
-      //MQTT Parameters:
+    //MQTT Parameters:
     WEB_F("\n<!Parameters:>\n<div style='display: none;'>\n");
     for(ushort i(0); i<2; i++){   //Only one sensor, here... :-(
       sendHTML_checkbox ("mqttEnable"      +String(i, DEC),                    mqttEnable[i]);
@@ -218,13 +226,13 @@ As long as no SSID is set and it is not connected to a master, the device acts a
 <tr><td id='param1' style='text-align:center;'><div style='display:inline-block;'>");
     sendHTML_inputText(F("counterName"), counterName, F("style='width:120px;'"));
     WEB_F("</div><div style='display:none;'>");
-    sendHTML_inputNumber(F("leakNotifPeriod"), String(leakNotifPeriod/3600000L, DEC), F("min=1 max=720 style='width:50px;text-align:right;'"));
+    sendHTML_inputNumber(F("leakNotifPeriod"), String(leakNotifPeriod/3600000L, DEC), "min=" + String(MIN_LEAKNOTIF_PERIOD/3600000L, DEC) + " max=" + String(MAX_LEAKNOTIF_PERIOD/3600000L, DEC) + " style='width:50px;text-align:right;'");
     WEB_F("h</div></td>\n<td id='param2' align=center><div style='display:inline-block;'>");
-    sendHTML_inputNumber(F("multiplier"), String(multiplier, DEC), F("style='width:50px;text-align:right;'"));
+    sendHTML_inputNumber(F("multiplier"), String(multiplier, DEC), F("min=1 max=100 style='width:50px;text-align:right;'"));
     WEB_F("dl/pulse</div><div style='display:none;'>");
-    sendHTML_inputNumber(F("maxConsumTime"), String(maxConsumTime/60000L, DEC), F("min=1 max=59 style='width:50px;text-align:right;'"));
+    sendHTML_inputNumber(F("maxConsumTime"), String(maxConsumTime/60000L, DEC), "min=" + String(MIN_MAXCONSUM_TIME/60000L, DEC) + " max=" + String(MAX_MAXCONSUM_TIME/60000L, DEC) + " style='width:50px;text-align:right;'");
     WEB_F("mn</div></td>\n<td id='param3' align=center><div style='display:inline-block;'>");
-    sendHTML_inputNumber(F("initValue"), getIndex(), F("min=0 max=999999999 style='width:80px;text-align:right;'"));
+    sendHTML_inputNumber(F("counterValue"), getIndex(), F("min=0 max=999999999 style='width:80px;text-align:right;'"));
     WEB_F("liters</div><div style='display:none;'>");
     sendHTML_inputText(F("leakMsg"), leakMsg, F("style='width:200px;'"));
     WEB_F("</div></td></tr>\n</table>\n");
@@ -250,8 +258,11 @@ As long as no SSID is set and it is not connected to a master, the device acts a
     sendHTML_button("mqttPlus", "+", "title='Add a field name' style='background-color: rgba(0, 0, 0, 0);' onclick='mqttAddRaw();'");
     WEB_F("</th></tr>\n</table>\n</div></form></div></div>\n");
 
-    WEB_F("</section>\n\n<footer>\n<h6>(V");
-    WEB_S(String(ResetConfig,DEC));
+    WEB_F("</section>\n\n<footer>\n<h6>(");
+    if(isTimeSynchronized()){
+      WEB_S(NTP.getDateStr());
+      WEB_F(" - ");
+    }WEB_F("V"); WEB_S(String(ResetConfig,DEC));
     WEB_F(", Uptime: ");
     ulong sec=millis()/1000L;
     WEB_S(String(sec/(24L*3600L)) + "d-");
@@ -339,14 +350,16 @@ function mqttRawAdd(){var t;for(t=document.getElementById('mqttPlus');t.tagName!
 function checkConfPopup(){var r;\n\
  if(document.getElementById('counterName').value==='')return false;\n\
  if(document.getElementById('multiplier').value==='')return false;\n\
- if(document.getElementById('initValue').value==='')return false;\n\
+ if(document.getElementById('counterValue').value==='')return false;\n\
  if(document.getElementById('leakNotifPeriod').value==='')return false;\n\
  if(document.getElementById('maxConsumTime').value==='')return false;\n\
  if(document.getElementById('leakMsg').value==='')return false;\n\
  if(!document.getElementById('mqttEnable').checked)return true;\n\
  if(document.getElementById('mqttBroker').value==='')return false;\n\
- if(!(r=document.getElementById('mqttRaws').getElementsByTagName('TR').length-1))return false;\n\
- for(var i=0;i<r;i++){\n\
+ if(!(r=document.getElementById('mqttRaws').getElementsByTagName('TR').length-1)){\n\
+  document.getElementById('mqttEnable').checked=false;\n\
+  return true;\n\
+ }for(var i=0;i<r;i++){\n\
   if(document.getElementById('mqttFieldName'+i).value==='')return false;\n\
   if(document.getElementById('mqttValue'+i).value===''&&document.getElementById('mqttNature'+i).value==='1')return false;\n\
  }return true;\n\
@@ -430,6 +443,8 @@ void writeConfig(){                                     //Save current config:
     f.println(maxConsumTime);
     f.println(leakStatus);
     f.println(leakMsg);
+    f.println(ntpServer);
+    f.println(localTimeZone);
     f.println(dailyData.size());
     for (std::map<ulong,ulong>::iterator it=dailyData.begin(); it!=dailyData.end(); it++){
       f.println(it->first);
@@ -459,6 +474,7 @@ inline bool getConfig(std::vector<ushort>::iterator v, File& f, bool w=true){ush
 inline bool getConfig(String& v, File& f, bool w=true){String r(readString(f).c_str());       if(r==v) return false; if(w)v=r; return true;}
 inline bool getConfig(bool&   v, File& f, bool w=true){bool   r(atoi(readString(f).c_str())); if(r==v) return false; if(w)v=r; return true;}
 inline bool getConfig(ushort& v, File& f, bool w=true){ushort r((unsigned)atoi(readString(f).c_str())); if(r==v) return false; if(w)v=r; return true;}
+inline bool getConfig(short&  v, File& f, bool w=true){short  r(atoi(readString(f).c_str())); if(r==v) return false; if(w)v=r; return true;}
 inline bool getConfig(ulong&  v, File& f, bool w=true){ulong  r((unsigned)atol(readString(f).c_str())); if(r==v) return false; if(w)v=r; return true;}
 bool readConfig(bool w){                                //Get config (return false if config is not modified):
   bool isNew(false);
@@ -490,8 +506,11 @@ bool readConfig(bool w){                                //Get config (return fal
   isNew|=getConfig(maxConsumTime, f, w);
   isNew|=getConfig(leakStatus, f, w);
   isNew|=getConfig(leakMsg, f, w);
-  ushort n; isNew|=getConfig(n, f, w); dailyData.erase( dailyData.begin(), dailyData.end() );
-  for(ushort i(0); i<n; i++){
+  isNew|=getConfig(ntpServer, f, w);
+  isNew|=getConfig(localTimeZone, f, w);
+  ushort n=dailyData.size();
+  isNew|=getConfig(n, f); dailyData.erase( dailyData.begin(), dailyData.end() );
+  for(ushort i(0); (!isNew||w) && i<n; i++){
     std::pair<ulong,ulong> data;
     isNew|=getConfig(data.first, f, w);
     isNew|=getConfig(data.second, f, w);
@@ -503,9 +522,9 @@ bool readConfig(bool w){                                //Get config (return fal
   isNew|=getConfig(mqttUser, f, w);
   isNew|=getConfig(mqttPwd, f, w);
   isNew|=getConfig(mqttQueue, f, w);
-  for(ushort i(0); i<2; i++){
+  for(ushort i(0); (!isNew||w) && i<2; i++){
     isNew|=getConfig(mqttEnable[i], f, w);
-    for(ushort j(0); j<mqttEnable[i] && (!isNew||w); j++){
+    for(ushort j(0); (!isNew||w) && j<mqttEnable[i] && (!isNew||w); j++){
       isNew|=addMQTT(i, j);
       isNew|=getConfig(mqttFieldName[i][j], f, w);
       isNew|=getConfig(mqttNature[i][j], f, w);
@@ -513,8 +532,11 @@ bool readConfig(bool w){                                //Get config (return fal
       isNew|=getConfig(mqttValue[i][j], f, w);
   } }
   f.close(); SPIFFS.end();
-  if(w) DEBUG_print("Config restored.\n");
-  return isNew;
+  if(w){
+    DEBUG_print("Config restored.\n");
+  }else{
+    DEBUG_print("Config read.\n");
+  }return isNew;
 }
 
 bool WiFiHost(){
@@ -615,6 +637,8 @@ void connectionTreatment(){                              //Test connexion/Check 
       }
 #endif
   ;}MDNS.update();
+  if(!isTimeSynchronized())
+    NTP.getTime();
 #endif
 } }
 
@@ -639,50 +663,61 @@ inline bool handlePlugIdentSubmit(ushort i){               //Set outputs names:
   return false;
 }
 
-inline bool handlecounterNameSubmit(ushort i){               //Set outputs names:
+inline bool handleCounterNameSubmit(ushort i){               //Set outputs names:
   if(ESPWebServer.hasArg("counterName"+String(i, DEC)) && ESPWebServer.arg("counterName"+String(i, DEC)))
     if(counterName!=ESPWebServer.arg("counterName"+String(i, DEC)))
       return(counterName=ESPWebServer.arg("counterName"+String(i, DEC)));
   return false;
 }
 
-#define setMQTT_S(n,m) if(     ESPWebServer.arg(n)         !=m){m=     ESPWebServer.arg(n);         isNew=true;};
-#define setMQTT_N(n,m) if((ulong)atol(ESPWebServer.arg(n).c_str())!=m){m=(ulong)atol(ESPWebServer.arg(n).c_str());isNew=true;};
-bool handleSubmitMQTTConf(ushort n){
+#define setMQTT_S(n,m) if(            ESPWebServer.arg(n)         !=m){m=     ESPWebServer.arg(n);         isNew=true;};
+#define setMQTT_N(n,m) if((ulong)atol(ESPWebServer.arg(n).c_str())!=m){m=atol(ESPWebServer.arg(n).c_str());isNew=true;};
+inline void check_leakNotifPeriod(){
+  leakNotifPeriod*=3600000L;
+  leakNotifPeriod=min(leakNotifPeriod, MAX_LEAKNOTIF_PERIOD);
+  leakNotifPeriod=max(leakNotifPeriod, MIN_LEAKNOTIF_PERIOD);
+}inline void check_maxConsumTime(){
+  maxConsumTime*=60000L;
+  maxConsumTime=min(maxConsumTime, MAX_MAXCONSUM_TIME);
+  maxConsumTime=max(maxConsumTime, MIN_MAXCONSUM_TIME);
+}bool handleSubmitMQTTConf(ushort n){
   bool isNew(false);
-  setMQTT_S("counterName", counterName);
-  setMQTT_N("multiplier", multiplier);
-  setMQTT_N("counterValue", counterValue);
-  setMQTT_N("leakNotifPeriod", leakNotifPeriod);
-  setMQTT_N("counterName", maxConsumTime);
-  setMQTT_S("leakMsg", leakMsg);
+  setMQTT_S("counterName",     counterName    );
+  setMQTT_N("counterValue",    counterValue   ); counterValue*=10L;
+  setMQTT_N("multiplier",      multiplier     );
+  setMQTT_N("leakNotifPeriod", leakNotifPeriod); check_leakNotifPeriod();
+  setMQTT_N("maxConsumTime",   maxConsumTime  ); check_maxConsumTime();
+  setMQTT_S("leakMsg",         leakMsg        );
   if((mqttEnable[n]=ESPWebServer.hasArg("mqttEnable"))){ushort i;
     if(mqttClient.connected()) mqttClient.disconnect();
-    setMQTT_S("mqttBroker", mqttBroker);
-    setMQTT_N("mqttPort",   mqttPort  );
-    setMQTT_S("mqttIdent",  mqttIdent );
-    setMQTT_S("mqttUser",   mqttUser  );
-    setMQTT_S("mqttPwd",    mqttPwd   );
+    setMQTT_S("mqttBroker",    mqttBroker);
+    setMQTT_N("mqttPort",      mqttPort  );
+    setMQTT_S("mqttIdent",     mqttIdent );
+    setMQTT_S("mqttUser",      mqttUser  );
+    setMQTT_S("mqttPwd",       mqttPwd   );
     for(i=0; ESPWebServer.hasArg("mqttFieldName"+String(i,DEC)); i++){
       isNew|=addMQTT(n, i);
       setMQTT_S("mqttFieldName"+String(i,DEC), mqttFieldName[n][i]);
       setMQTT_N("mqttNature"   +String(i,DEC), mqttNature[n][i]   );
       setMQTT_N("mqttType"     +String(i,DEC), mqttType[n][i]     );
-      setMQTT_S("mqttValue" +String(i,DEC),    mqttValue[n][i] );
-    }
+      setMQTT_S("mqttValue"    +String(i,DEC), mqttValue[n][i]    );
+    } //Remove any erased:
     for(mqttEnable[n]=i; i<mqttFieldName[n].size(); i++){isNew=true;
       mqttFieldName[n].pop_back();
       mqttNature[n].pop_back();
       mqttType[n].pop_back();
       mqttValue[n].pop_back();
-    }
-  }return isNew;
+  } }
+  return isNew;
 }
 
 void  handleRoot(){ bool w, blankPage=false;
   if((w=ESPWebServer.hasArg("hostname"))){
     hostname=ESPWebServer.arg("hostname");                //Set host name
     reboot();
+  }else if(ESPWebServer.hasArg("ntpServer") || ESPWebServer.hasArg("localTimeZone")){
+    if((w|=ESPWebServer.hasArg("ntpServer")))     ntpServer=ESPWebServer.arg("ntpServer");
+    if((w|=ESPWebServer.hasArg("localTimeZone"))) localTimeZone=atoi(ESPWebServer.arg("localTimeZone").c_str());
   }else if((w=ESPWebServer.hasArg("reboot"))){
     reboot();
   }else if((w=ESPWebServer.hasArg("password"))){
@@ -692,7 +727,7 @@ void  handleRoot(){ bool w, blankPage=false;
     w|=handleSubmitMQTTConf(atoi(ESPWebServer.arg("plugNum").c_str()));
   }else{
     w|=handlePlugIdentSubmit(0);                          //Set plug name
-    w|=handlecounterNameSubmit(0);                        //Set plug name
+    w|=handleCounterNameSubmit(0);                        //Set plug name
   }if(w) writeConfig();
   sendHTML(blankPage);
 }
@@ -738,44 +773,39 @@ bool mqttNotify(const String& msg, const ushort n){
 }inline bool mqttNotify(ulong volume)  {return(mqttNotify(String(volume, DEC), 0));}  //Volume notification
 inline  bool mqttNotify(String message){return(mqttNotify(message, 1));}              //Warning on possible leaks
 
-bool dailyDataWrite(const ulong& h){
+void dailyDataWrite(const ulong& h){
   String filename=NTP.getDateStr(h);
   File file;
-  mqttNotify(getCounter());
-  if( !SPIFFS.begin() ){
-    DEBUG_print("Cannot open SPIFFS!...\n");
-    return false;
-  }if((file=SPIFFS.open(filename, "a"))){
-    for (std::map<ulong,ulong>::iterator it=dailyData.begin(); it!=dailyData.end(); it++){
-      file.print(it->first);
-      file.print(",");
-      file.print(it->second);
-      file.print("\n");
-    }file.close(); SPIFFS.end();
-    return true;
-  }DEBUG_print("Cannot open data file!...\n");
-  return false;
-}
+  if(isNow(next_dataFileStorage)){
+    if( !SPIFFS.begin() ){
+      DEBUG_print("Cannot open SPIFFS!...\n");
+      return;
+    }if((file=SPIFFS.open(filename, "a"))){
+      for (std::map<ulong,ulong>::iterator it=dailyData.begin(); it!=dailyData.end(); it++){
+        file.print(it->first);
+        file.print(",");
+        file.print(it->second);
+        file.print("\n");
+      }file.close(); SPIFFS.end();
+      dailyData.erase( dailyData.begin(), dailyData.end() );
+      DEBUG_print("SPIFFS Data writed...\n");
+      next_dataFileStorage = millis() + 3600000UL;
+    }DEBUG_print("Cannot open data file!...\n");
+} }
 
-//See: https://projetsdiy.fr/esp8266-web-serveur-partie3-heure-internet-ntp-ntpclientlib/
-ulong time(bool b=true){
-  static ulong delta(0L);
-  if(!b || !delta){
-    NTP.getTime();
-    delta=now()-millis()/1000L;
-  }return(delta ? now() :0L);
-}inline ulong currentHour(const ulong& h) {return ((h/3600L )*3600L );}
-inline  ulong currentDay (const ulong& d) {return ((d/86400L)*86400L);}
+inline ulong currentHour(const ulong& h) {return ((h/3600UL )*3600UL );}
+inline ulong currentDay (const ulong& d) {return ((d/86400UL)*86400UL);}
 
 void dataStorage(){   // Every hours...
-  ulong s=time();
-  if(s && isNow(next_dataStorage)){
-    if(s-currentHour(s)<60L){
-      dailyData[currentHour(s)]=getCounter();
-      if(dailyDataWrite(s))
-        dailyData.erase( dailyData.begin(), dailyData.end() );
-      s=0L;
-    }next_dataStorage=currentHour(s) - s + 3540L;
+  static ulong sec;
+  if(isNow(next_dataStorage)){
+    if(sec-currentHour(sec)<60UL){
+      dailyData[currentHour(sec)]=getCounter();
+      DEBUG_print("Data writed...\n");
+      mqttNotify(getCounter());
+      dailyDataWrite(sec);
+      sec=0UL;
+    }next_dataStorage=(currentHour(now()) + 3540UL - sec)*1000UL;
 } }
 
 //Gestion des switchs/Switchs management
@@ -797,9 +827,10 @@ void leakChecker(){
     next_leakDetected=millis() + leakNotifPeriod;
     next_leakCheck=millis() + maxConsumTime;
   }else if(isNow(next_leakDetected)){  // ...in control period.
-    leakStatus++;
-    mqttNotify(leakMsg);
-    next_leakDetected=millis() + leakNotifPeriod;
+    if(++leakStatus > LEAKDETECTLIMITE){
+      DEBUG_print("Leak notification!...\n");
+      mqttNotify(leakMsg);
+    }next_leakDetected=millis() + leakNotifPeriod;
 } }
 
 // ***********************************************************************************************
@@ -833,8 +864,27 @@ void setup(){
   MDNS.addService("http", "tcp", 80);
   Serial_print("HTTP server started\n");
 
-  NTP.begin("pool.ntp.org", TIMEZONE, false);
-  NTP.setInterval(3600);
+  NTP.begin(ntpServer, localTimeZone);
+  NTP.setInterval(NTP_INTERVAL);
+
+#ifdef DEBUG
+  NTP.onNTPSyncEvent([](NTPSyncEvent_t error) {
+    if (error) {
+      DEBUG_print("Time Sync error: ");
+      if (error == noResponse){
+        DEBUG_print("NTP server not reachable\n");
+      }else if (error == invalidAddress){
+        DEBUG_print("Invalid NTP server address\n");
+      }else{
+        DEBUG_print(error);DEBUG_print("\n");
+      }
+    }else {
+      DEBUG_print("Got NTP time: ");
+      DEBUG_print(NTP.getTimeDateString(NTP.getLastNTPSync()));
+      DEBUG_print("\n");
+    }
+  });
+#endif
 }
 
 // **************************************** LOOP *************************************************
