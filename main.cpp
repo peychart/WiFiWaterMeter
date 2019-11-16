@@ -196,7 +196,7 @@ As long as no SSID is set and it is not connected to a master, the device acts a
 </td><td>\n<form id='0'>\n\
 	<canvas id='canvasOdometer' width='100' height='40' onclick='initConfPopup(this);'></canvas>\n\
 	<input id='OdometerValue' style='width:150px;display:none;' value='");
-    WEB_S(String(getCounter()/1000, DEC) + "." + String(getCounter()%1000, DEC));
+    WEB_S(String(getCounter()/10000.0, 4));
     WEB_F("' onblur='initConfPopup(this);'>\n</form></td><td>\n<form id='1'>\n\
 	<button id='leakStatusOk' name='status' class='safe' title='' onclick='initConfPopup(this);' style='display:");
   WEB_S(leakStatus ?"none" :"inline-block");
@@ -952,6 +952,7 @@ void setup(){
     }
   });
 #endif
+  NTP.getTime();
 }
 
 // **************************************** LOOP *************************************************
