@@ -38,7 +38,9 @@ bool                              WiFiAP(false);
 #define MAX_LEAKNOTIF_PERIOD      25200000UL
 #define MIN_MAXCONSUM_TIME        60000UL
 #define MAX_MAXCONSUM_TIME        3600000UL
-ulong                             next_reconnect(0UL), next_dataStorage(0UL), next_dataFileStorage(0UL), next_leakCheck(0UL), next_leakDetected(0UL),
+ulong                             next_reconnect(0UL),
+                                  next_dataStorage(100000UL), next_dataFileStorage(0UL),
+                                  next_leakCheck(0UL), next_leakDetected(MIN_LEAKNOTIF_PERIOD),
                                   leakNotifPeriod(MIN_LEAKNOTIF_PERIOD), maxConsumTime(MIN_MAXCONSUM_TIME);
 ushort                            leakStatus(0);
 volatile bool                     intr(false);
@@ -334,7 +336,7 @@ function mqttRawAdd(){var t;for(t=document.getElementById('mqttPlus');t.tagName!
  td.appendChild(i=document.createElement('input'));i.id=i.name='mqttFieldName'+n;i.type='text';i.style='width:80%;';\n\
  tr.appendChild(td=document.createElement('td'));td.style='text-align:center;';\n\
  td.appendChild(i=document.createElement('select'));i.id=i.name='mqttNature'+n;i.setAttribute('onchange','refreshConfPopup();');i.style='width:80%;text-align:center;';\n\
- i.appendChild(j=document.createElement('option'));j.value='0';j.innerHTML=(document.getElementById('plugNum').value=='0' ?'Counter-value' :'Notification-message');\n\
+ i.appendChild(j=document.createElement('option'));j.value='0';j.innerHTML=(document.getElementById('plugNum').value=='0' ?'Counter-value' :'Warning-notification');\n\
  i.appendChild(j=document.createElement('option'));j.value='1';j.innerHTML='Constant';\n\
  tr.appendChild(td=document.createElement('td'));td.style='text-align:center;';\n\
  td.appendChild(i=document.createElement('select'));i.id=i.name='mqttType'+n;i.setAttribute('onchange','refreshConfPopup();');i.style='width:80%;text-align:center;';\n\
@@ -637,8 +639,10 @@ void connectionTreatment(){                              //Test connexion/Check 
       }
 #endif
   ;}MDNS.update();
-  if(!isTimeSynchronized())
+  if(!isTimeSynchronized()){
+    DEBUG_print("Retry NTP synchro...\n");
     NTP.getTime();
+  }
 #endif
 } }
 
@@ -718,6 +722,7 @@ void  handleRoot(){ bool w, blankPage=false;
   }else if(ESPWebServer.hasArg("ntpServer") || ESPWebServer.hasArg("localTimeZone")){
     if((w|=ESPWebServer.hasArg("ntpServer")))     ntpServer=ESPWebServer.arg("ntpServer");
     if((w|=ESPWebServer.hasArg("localTimeZone"))) localTimeZone=atoi(ESPWebServer.arg("localTimeZone").c_str());
+    reboot();
   }else if((w=ESPWebServer.hasArg("reboot"))){
     reboot();
   }else if((w=ESPWebServer.hasArg("password"))){
@@ -773,37 +778,97 @@ bool mqttNotify(const String& msg, const ushort n){
 }inline bool mqttNotify(ulong volume)  {return(mqttNotify(String(volume, DEC), 0));}  //Volume notification
 inline  bool mqttNotify(String message){return(mqttNotify(message, 1));}              //Warning on possible leaks
 
-void dailyDataWrite(const ulong& h){
-  String filename=NTP.getDateStr(h);
-  File file;
-  if(isNow(next_dataFileStorage)){
-    if( !SPIFFS.begin() ){
+void getDataFile(){
+  File f;
+  ESPWebServer.setContentLength(CONTENT_LENGTH_UNKNOWN);
+  ESPWebServer.send(200, "text/html", F("<!DOCTYPE HTML>\n<html lang='us-US'>\n <head>\n  <meta charset='utf-8'/>\n"));
+  ESPWebServer.sendContent(F("  <title>"));
+  ESPWebServer.sendContent(hostname);
+  ESPWebServer.sendContent(F(" DataFile</title>\n </head>\n <body>\n"));
+  if(SPIFFS.begin() && (f=SPIFFS.open("dataStorage", "r"))){
+    ESPWebServer.sendContent(F("["));
+    for(String s=readString(f); s.length(); ){
+      ESPWebServer.sendContent("\n {\n  \"date\": ");
+      ESPWebServer.sendContent(s.substring(0, s.indexOf(",")));
+      ESPWebServer.sendContent(",\n  \"index\": ");
+      ESPWebServer.sendContent(s.substring(s.indexOf(",")+1));
+      ESPWebServer.sendContent("\n }");
+      if((s=readString(f)).length())
+        ESPWebServer.sendContent(",");
+      else
+        ESPWebServer.sendContent("\n]\n");
+  } }
+  else{
+    ESPWebServer.sendContent("Error: cannot access data...\n");
+    DEBUG_print("Cannot open SPIFFS data file!...\n");
+  }ESPWebServer.sendContent(F(" </body>\n</html>\n"));
+  ESPWebServer.sendContent("");
+  ESPWebServer.client().stop();
+  if(f) f.close(); SPIFFS.end();
+}
+
+bool deleteSPIFFSDataFile(bool b){
+  static bool  deleteDataFile=false;
+  static ulong next_canDeleteFileStorage;
+  if(b){
+    deleteDataFile=true;
+    next_canDeleteFileStorage = millis() + DELETEDATAFILE_DELAY;
+  }else if(deleteDataFile && isNow(next_canDeleteFileStorage)){
+    if(SPIFFS.begin()){
+      deleteDataFile=false;
+      SPIFFS.remove("dataStorage");
+      SPIFFS.end();
+      DEBUG_print("Data file removed.\n");
+    }else{
+      next_canDeleteFileStorage = millis() + DELETEDATAFILE_DELAY;
       DEBUG_print("Cannot open SPIFFS!...\n");
-      return;
-    }if((file=SPIFFS.open(filename, "a"))){
+    } }
+    return deleteDataFile;
+} // C-- object... ;-)
+void deleteDataFile(bool b=false) {deleteSPIFFSDataFile(b);}
+bool isRemovingDataFile()         {return deleteSPIFFSDataFile(false);};
+
+void dailyDataWrite(const ulong& h){
+  if(!isRemovingDataFile() && isNow(next_dataFileStorage)){
+    File f;
+    if(SPIFFS.begin() && (f=SPIFFS.open("dataStorage", "a"))){
       for (std::map<ulong,ulong>::iterator it=dailyData.begin(); it!=dailyData.end(); it++){
-        file.print(it->first);
-        file.print(",");
-        file.print(it->second);
-        file.print("\n");
-      }file.close(); SPIFFS.end();
+        f.print(it->first);
+        f.print(",");
+        f.print(it->second);
+        f.print("\n");
+      }f.close(); SPIFFS.end();
       dailyData.erase( dailyData.begin(), dailyData.end() );
-      DEBUG_print("SPIFFS Data writed...\n");
       next_dataFileStorage = millis() + 3600000UL;
-    }DEBUG_print("Cannot open data file!...\n");
-} }
+      DEBUG_print("SPIFFS Data writed...\n");
+    }else{
+      DEBUG_print("Cannot open data file!...\n");
+} } }
+
+bool reindexMap(){
+  if(isTimeSynchronized()){
+    for (std::map<ulong,ulong>::iterator it=dailyData.begin(); it!=dailyData.end(); it++){
+      if(it->first < (-1UL)/1000UL){
+        std::pair<ulong,ulong> v(it->first+now(),it->second);
+        dailyData.erase(it); dailyData.insert(v);
+      }else  break;
+    }return true;
+  }return false;
+}
 
 inline ulong currentHour(const ulong& h) {return ((h/3600UL )*3600UL );}
 inline ulong currentDay (const ulong& d) {return ((d/86400UL)*86400UL);}
 
 void dataStorage(){   // Every hours...
-  static ulong sec;
+  static bool timeIsSync=false;
   if(isNow(next_dataStorage)){
+    ulong sec=now();
+    if(!timeIsSync) timeIsSync=reindexMap();
     if(sec-currentHour(sec)<60UL){
       dailyData[currentHour(sec)]=getCounter();
       DEBUG_print("Data writed...\n");
       mqttNotify(getCounter());
-      dailyDataWrite(sec);
+      if(timeIsSync) dailyDataWrite(sec);
       sec=0UL;
     }next_dataStorage=(currentHour(now()) + 3540UL - sec)*1000UL;
 } }
@@ -852,11 +917,13 @@ void setup(){
   // Servers:
   WiFi.softAPdisconnect(); WiFi.disconnect();
   //Definition des URLs d'entree /Input URL definitions
-  ESPWebServer.on("/",        [](){handleRoot();      ESPWebServer.client().stop();});
-  ESPWebServer.on("/restart", [](){reboot();});
-  ESPWebServer.on("/index",   [](){setIndex(); ESPWebServer.send(200, "text/plain", "[" + getIndex() + "]");});
-//ESPWebServer.on("/about",   [](){ ESPWebServer.send(200, "text/plain", getHelp()); });
-  ESPWebServer.onNotFound(    [](){ESPWebServer.send(404, "text/plain", "404: Not found");});
+  ESPWebServer.on("/",           [](){handleRoot();      ESPWebServer.client().stop();});
+  ESPWebServer.on("/restart",    [](){reboot();});
+  ESPWebServer.on("/data",       [](){getDataFile();});
+  ESPWebServer.on("/removeData", [](){deleteDataFile();});
+  ESPWebServer.on("/index",      [](){setIndex(); ESPWebServer.send(200, "text/plain", "[" + getIndex() + "]");});
+//ESPWebServer.on("/about",      [](){ ESPWebServer.send(200, "text/plain", getHelp()); });
+  ESPWebServer.onNotFound(       [](){ESPWebServer.send(404, "text/plain", "404: Not found");});
 
   httpUpdater.setup(&ESPWebServer);  //Adds OnTheAir updates:
   ESPWebServer.begin();              //Demarrage du serveur web /Web server start
@@ -895,5 +962,6 @@ void loop(){
   interruptTreatment();                 //Gestion du compteurs/Counter management
   dataStorage();                        //Save data on SPIFFS
   leakChecker();                        //Check for leaks...
+  deleteDataFile();
  }
 // ***********************************************************************************************

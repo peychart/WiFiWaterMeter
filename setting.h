@@ -16,6 +16,7 @@ unsigned short ResetConfig =  1;     //Change this value to reset current config
 #define COUNTERPIN            D5
 #define DEBOUNCE_DELAY        50UL
 #define MULTIPLIER            5UL     //Deciliter per pulse...
+#define DELETEDATAFILE_DELAY  600000UL
 
 //Default values (editable in the web interface):
 #define WATERLEAK_MESSAGE    "Warning: probable water leak!"
