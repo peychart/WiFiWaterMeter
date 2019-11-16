@@ -82,9 +82,8 @@ void writeConfig();
 ulong time(bool b=false);
 
 inline bool isNow(ulong v)       {ulong ms(millis()); return((v<ms) && (ms-v)<INFINY);}  //Because of millis() rollover:
-inline bool isTimeSynchronized() {return(now()!=(long)(millis()/1000UL));}
+inline bool isTimeSynchronized() {return(now()>946684800L);}
 inline ulong getCounter()        {return counterValue/10L;}
-inline String getIndex()         {return String(getCounter(), DEC);}
 
 bool addMQTT(ushort i, ushort j){bool isNew(false);
   std::vector<String> s;
@@ -115,7 +114,7 @@ void sendHTML(bool blankPage=false){
   ESPWebServer.send(200, "text/html", F("<!DOCTYPE HTML>\n<html lang='us-US'>\n<head>\n <meta charset='utf-8'/>\n"));
   if(!blankPage){
     WEB_F(" <title>");
-    WEB_S(String("001-110/001-34"));
+    WEB_S(hostname);
     WEB_F("</title>\n\
 <style>\n\
  *{margin:0; padding:0;}\n\
@@ -168,7 +167,7 @@ As long as no SSID is set and it is not connected to a master, the device acts a
     sendHTML_inputNumber(F("localTimeZone"), String(localTimeZone, DEC), "min=-11 max=11 size=2 style='width:60px'");
     sendHTML_button("", F("Submit"), F("onclick='submit();'"));
     WEB_F("</form>\n</td><td style='text-align: center;'>\n<form method='POST'>");
-    sendHTML_button(F("reboot"), F("Save Data"), F("onclick='submit();'")); sendHTML_checkbox("reboot", true, "style=\"display:none\"");
+    sendHTML_button(F("restart"), F("Save Data"), F("onclick='submit();'")); sendHTML_checkbox("reboot", true, "style='display:none;'");
     WEB_F("</form>\n</td></tr></table>\n<br><h3>Network connection:</h3><table><tr>");
     for(ushort i(0); i<SSIDCount(); i++){
       WEB_F("<td>\n<form method='POST'><table>\n<tr><td>SSID ");
@@ -191,18 +190,16 @@ As long as no SSID is set and it is not connected to a master, the device acts a
 <!MAIN SECTION>\n\
 <section>");
 
-    WEB_F("<table id='main' style='width: 100%'><col width='145px'><col width='260px'><tr>\n<td>\n\
-<h3>"); WEB_S(hostname); WEB_F("</h3>\n\
+    WEB_F("<table id='main' style='width: 100%'><col width='145px'><col width='260px'><tr>\n<td>\n<h3>");
+    WEB_S(hostname); WEB_F("</h3>\n\
 </td><td>\n<form id='0'>\n\
 	<canvas id='canvasOdometer' width='100' height='40' onclick='initConfPopup(this);'></canvas>\n\
-	<input id='OdometerValue' style='width:150px;display:none;' value='");
-    WEB_S(String(getCounter()/10000.0, 4));
-    WEB_F("' onblur='initConfPopup(this);'>\n</form></td><td>\n<form id='1'>\n\
-	<button id='leakStatusOk' name='status' class='safe' title='' onclick='initConfPopup(this);' style='display:");
-  WEB_S(leakStatus ?"none" :"inline-block");
-  WEB_F(";'>\n<button id='leakStatusFail' name='status' class='warning blink' title='Warning: probable water leak!' onclick='initConfPopup(this);' style='display:");
-  WEB_S(leakStatus ?"inline-block" :"none");
-  WEB_F(";'></button>\n</form></td></tr></table>\n");
+</form></td><td>\n<form id='1'>\n\
+  <button id='leakStatusOk' name='status' class='safe' title='' onclick='initConfPopup(this);' style='display:");
+    WEB_S(leakStatus ?"none" :"inline-block");
+    WEB_F(";'>\n<button id='leakStatusFail' name='status' class='warning blink' title='Warning: probable water leak!' onclick='initConfPopup(this);' style='display:");
+    WEB_S(leakStatus ?"inline-block" :"none");
+    WEB_F(";'></button>\n</form></td></tr></table>\n");
 
     //MQTT Parameters:
     WEB_F("\n<!Parameters:>\n<div style='display: none;'>\n");
@@ -234,7 +231,7 @@ As long as no SSID is set and it is not connected to a master, the device acts a
     WEB_F("dl/pulse</div><div style='display:none;'>");
     sendHTML_inputNumber(F("maxConsumTime"), String(maxConsumTime/60000L, DEC), "min=" + String(MIN_MAXCONSUM_TIME/60000L, DEC) + " max=" + String(MAX_MAXCONSUM_TIME/60000L, DEC) + " style='width:50px;text-align:right;'");
     WEB_F("mn</div></td>\n<td id='param3' align=center><div style='display:inline-block;'>");
-    sendHTML_inputNumber(F("counterValue"), getIndex(), F("min=0 max=999999999 style='width:80px;text-align:right;'"));
+    sendHTML_inputNumber(F("counterValue"), String(getCounter(), DEC), F("min=0 max=999999999 style='width:80px;text-align:right;'"));
     WEB_F("liters</div><div style='display:none;'>");
     sendHTML_inputText(F("leakMsg"), leakMsg, F("style='width:200px;'"));
     WEB_F("</div></td></tr>\n</table>\n");
@@ -260,11 +257,8 @@ As long as no SSID is set and it is not connected to a master, the device acts a
     sendHTML_button("mqttPlus", "+", "title='Add a field name' style='background-color: rgba(0, 0, 0, 0);' onclick='mqttAddRaw();'");
     WEB_F("</th></tr>\n</table>\n</div></form></div></div>\n");
 
-    WEB_F("</section>\n\n<footer>\n<h6>(");
-    if(isTimeSynchronized()){
-      WEB_S(NTP.getDateStr());
-      WEB_F(" - ");
-    }WEB_F("V"); WEB_S(String(ResetConfig,DEC));
+    WEB_F("</section>\n\n<footer>\n<h6>(<div id='date' style='display:inline-block;'></div>V");
+    WEB_S(String(ResetConfig,DEC));
     WEB_F(", Uptime: ");
     ulong sec=millis()/1000L;
     WEB_S(String(sec/(24L*3600L)) + "d-");
@@ -275,27 +269,22 @@ As long as no SSID is set and it is not connected to a master, the device acts a
 \n\
 <!FRAME /dev/null><iframe name='blankFrame' height='0' width='0' frameborder='0'></iframe>\n\
 <script>\n\
-var odometer,odo=document.getElementById('OdometerValue');\n\
+var odometer;\n\
 this.timer=0;\n\
-function init(){\n\
- odometer=new steelseries.Odometer('canvasOdometer', {'decimals':3,'value':");
-    WEB_S(String("987.2"));
-    WEB_F("});odometer.setValue(odo.value);\n\
- refresh(1);}\n\
-function refresh(v=30){\n\
+function init(){odometer=new steelseries.Odometer('canvasOdometer', {'decimals':3});refresh(1);}\n\
+function refresh(v=20){\n\
  clearTimeout(this.timer);document.getElementById('about').style.display='none';\n\
- if(v>0)this.timer=setTimeout(function(){RequestStatus();refresh();},v*1000);}\n\
-function RequestStatus(){var j,ret,e,f,g,req=new XMLHttpRequest();\n\
- req.open('GET',location.protocol+'//'+location.host+'/plugValues',false);req.send(null);ret=req.responseText;\n\
- if((j=ret.indexOf('['))>=0)\n\
-  if((e=document.getElementsByClassName('onoffswitch-checkbox')).length && (f=document.getElementsByClassName('onofftimer')).length && (g=document.getElementsByClassName('sDuration')).length)\n\
-   for(var v,i=0,r=ret.substr(j+1);r[0] && r[0]!=']';i++){\n\
-    if((j=r.indexOf(','))<0)j=r.indexOf(']');\n\
-    if(j>1 && ((r[0]=='\"'&&r[j-1]=='\"')||(r[0]=='\\\''&&r[j-1]=='\\\'')))v=parseInt(r.substr(1,j-2));else v=parseInt(r.substr(0,j));\n\
-    e[i].checked=v;f[i].checked=!v;if(g[i].value=='-1')f[i].disabled=!(f[i].checked=false);\n\
-    r=r.substr(j+1);\n\
-}  }\n\
-function showHelp(){refresh(120);document.getElementById('about').style.display='block';\n}\n\
+ if(v>0)this.timer=setTimeout(function(){RequestStatus();refresh();},v*1000);\n\
+}\n\
+function RequestStatus(){var ret,req=new XMLHttpRequest();\n\
+ req.open('GET',location.protocol+'//'+location.host+'/index',false);req.send(null);ret=req.responseText.trim();\n\
+ if(ret.indexOf('[')>=0 && ret.indexOf(',')>=0 && ret.indexOf(']')>=0){\n\
+  var s='No NTP sync', v=parseInt(ret.substring(ret.indexOf('[')+1,ret.indexOf(',')));\n\
+  if(v>946684800){s=(new Date(v*1000)).toISOString();s=s.substring(0,s.indexOf('T')).split('-').join('/');}\n\
+  document.getElementById('date').innerHTML=s + '&nbsp;-&nbsp;';\n\
+  odometer.setValue(parseInt(ret.substring(ret.indexOf(',')+1,ret.indexOf(']')))/1000.0);\n\
+}}\n\
+function showHelp(){refresh(120);document.getElementById('about').style.display='block';}\n\
 function saveSSID(e){var f,s;\n\
  for(f=e;f.tagName!='FORM';)f=f.parentNode;\n\
  if((s=f.querySelectorAll('input[type=text]')).length && s[0]==''){alert('Empty SSID...');f.reset();s.focus();}\n\
@@ -781,10 +770,7 @@ inline  bool mqttNotify(String message){return(mqttNotify(message, 1));}        
 void getDataFile(){
   File f;
   ESPWebServer.setContentLength(CONTENT_LENGTH_UNKNOWN);
-  ESPWebServer.send(200, "text/html", F("<!DOCTYPE HTML>\n<html lang='us-US'>\n <head>\n  <meta charset='utf-8'/>\n"));
-  ESPWebServer.sendContent(F("  <title>"));
-  ESPWebServer.sendContent(hostname);
-  ESPWebServer.sendContent(F(" DataFile</title>\n </head>\n <body>\n"));
+  ESPWebServer.send(200, "text/plain");
   if(SPIFFS.begin() && (f=SPIFFS.open("dataStorage", "r"))){
     ESPWebServer.sendContent(F("["));
     for(String s=readString(f); s.length(); ){
@@ -801,8 +787,7 @@ void getDataFile(){
   else{
     ESPWebServer.sendContent("Error: cannot access data...\n");
     DEBUG_print("Cannot open SPIFFS data file!...\n");
-  }ESPWebServer.sendContent(F(" </body>\n</html>\n"));
-  ESPWebServer.sendContent("");
+  }ESPWebServer.sendContent("");
   ESPWebServer.client().stop();
   if(f) f.close(); SPIFFS.end();
 }
@@ -881,7 +866,7 @@ void interruptTreatment(){
     delay(DEBOUNCE_DELAY);
     if(!digitalRead(COUNTERPIN)){ //Counter++ on falling pin...
       counterValue+=multiplier;
-      DEBUG_print("Counter: " + getIndex() + "\n");
+      DEBUG_print("Counter: " + String(getCounter(), DEC) + "\n");
       next_leakCheck=millis() + maxConsumTime;
       intr=false;
 } } }
@@ -921,7 +906,7 @@ void setup(){
   ESPWebServer.on("/restart",    [](){reboot();});
   ESPWebServer.on("/data",       [](){getDataFile();});
   ESPWebServer.on("/removeData", [](){deleteDataFile();});
-  ESPWebServer.on("/index",      [](){setIndex(); ESPWebServer.send(200, "text/plain", "[" + getIndex() + "]");});
+  ESPWebServer.on("/index",      [](){setIndex(); ESPWebServer.send(200, "text/plain", "[" + String(now(), DEC) + "," + String(getCounter(), DEC) + "]");});
 //ESPWebServer.on("/about",      [](){ ESPWebServer.send(200, "text/plain", getHelp()); });
   ESPWebServer.onNotFound(       [](){ESPWebServer.send(404, "text/plain", "404: Not found");});
 
