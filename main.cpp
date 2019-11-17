@@ -22,70 +22,71 @@
 #include "setting.h"   //Can be adjusted according to the project...
 
 //Avoid to change the following:
-#define ulong                     long unsigned int
-#define INFINY                    60000UL
-String                            hostname(DEFAULTHOSTNAME);    //Can be change by interface
-String                            ssid[SSIDCount()];            //Identifiants WiFi /Wifi idents
-String                            password[SSIDCount()];        //Mots de passe WiFi /Wifi passwords
-String                            counterName(DEFAULTHOSTNAME), leakMsg(WATERLEAK_MESSAGE), ntpServer(NTPSERVER);
-short                             localTimeZone(TIMEZONE);
-ulong                             counterValue(0UL), multiplier(MULTIPLIER);
-bool                              WiFiAP(false);
+#define ulong                         long unsigned int
+#define INFINY                        60000UL
+String                                hostname(DEFAULTHOSTNAME);    //Can be change by interface
+String                                ssid[SSIDCount()];            //Identifiants WiFi /Wifi idents
+String                                password[SSIDCount()];        //Mots de passe WiFi /Wifi passwords
+String                                counterName(DEFAULTHOSTNAME), leakMsg(WATERLEAK_MESSAGE), ntpServer(NTPSERVER);
+short                                 localTimeZone(TIMEZONE);
+ulong                                 counterValue(0UL), multiplier(MULTIPLIER);
+bool                                  WiFiAP(false);
 #ifdef DEFAULTWIFIPASS
-  ushort                          nbWifiAttempts(MAXWIFIRETRY), WifiAPTimeout;
+  ushort                              nbWifiAttempts(MAXWIFIRETRY), WifiAPTimeout;
 #endif
-#define MIN_LEAKNOTIF_PERIOD      3600000UL
-#define MAX_LEAKNOTIF_PERIOD      25200000UL
-#define MIN_MAXCONSUM_TIME        60000UL
-#define MAX_MAXCONSUM_TIME        3600000UL
-ulong                             next_reconnect(0UL),
-                                  next_dataStorage(100000UL), next_dataFileStorage(0UL),
-                                  next_leakCheck(0UL), next_leakDetected(MIN_LEAKNOTIF_PERIOD),
-                                  leakNotifPeriod(MIN_LEAKNOTIF_PERIOD), maxConsumTime(MIN_MAXCONSUM_TIME);
-ushort                            leakStatus(0);
-volatile bool                     intr(false);
-std::map<ulong,ulong>             dailyData;
+#define MIN_LEAKNOTIF_PERIOD          3600000UL
+#define MAX_LEAKNOTIF_PERIOD          25200000UL
+#define MIN_MAXCONSUM_TIME            60000UL
+#define MAX_MAXCONSUM_TIME            3600000UL
+#define PUSHDATA_DELAY                120UL
+ulong                                 next_reconnect(0UL),
+                                      next_leakCheck(0UL), next_leakDetected(MIN_LEAKNOTIF_PERIOD),
+                                      leakNotifPeriod(MIN_LEAKNOTIF_PERIOD), maxConsumTime(MIN_MAXCONSUM_TIME);
+ushort                                leakStatus(0);
+volatile bool                         intr(false);
+std::map<ulong,ulong>                 dailyData;
 
-ESP8266WebServer                  ESPWebServer(80);
-ESP8266HTTPUpdateServer           httpUpdater;
+ESP8266WebServer                      ESPWebServer(80);
+ESP8266HTTPUpdateServer               httpUpdater;
 
-WiFiClient                        ethClient;
-PubSubClient                      mqttClient(ethClient);
-String                            mqttBroker, mqttIdent, mqttUser, mqttPwd, mqttQueue;
-ushort                            mqttPort;
-std::vector<std::vector<String>>  mqttFieldName, mqttValue;
-std::vector<std::vector<ushort>>  mqttNature, mqttType;
-std::vector<ushort>               mqttEnable(0);
+WiFiClient                            ethClient;
+PubSubClient                          mqttClient(ethClient);
+String                                mqttBroker, mqttIdent, mqttUser, mqttPwd, mqttQueue;
+ushort                                mqttPort;
+std::vector<std::vector<String>>      mqttFieldName, mqttValue;
+std::vector<std::vector<ushort>>      mqttNature, mqttType;
+std::vector<ushort>                   mqttEnable(0);
 
-#define Serial_print(m)          {if(Serial) Serial.print(m);}
-#define Serial_printf(m,n)       {if(Serial) Serial.printf(m,n);}
+#define Serial_print(m)              {if(Serial) Serial.print(m);}
+#define Serial_printf(m,n)           {if(Serial) Serial.printf(m,n);}
 #ifdef DEBUG
-  WiFiServer                      telnetServer(23);
-  WiFiClient                      telnetClient;
+  WiFiServer                          telnetServer(23);
+  WiFiClient                          telnetClient;
   #ifdef DEFAULTWIFIPASS
-    #define DEBUG_print(m)       {if(telnetClient && telnetClient.connected()) telnetClient.print(m);    Serial_print(m);}
-    #define DEBUG_printf(m,n)    {if(telnetClient && telnetClient.connected()) telnetClient.printf(m,n); Serial_printf(m,n);}
+    #define DEBUG_print(m)           {if(telnetClient && telnetClient.connected()) telnetClient.print(m);    Serial_print(m);}
+    #define DEBUG_printf(m,n)        {if(telnetClient && telnetClient.connected()) telnetClient.printf(m,n); Serial_printf(m,n);}
   #else
-    #define DEBUG_print(m)        Serial_print(m);
-    #define DEBUG_printf(m,n)     Serial_printf(m,n);
+    #define DEBUG_print(m)            Serial_print(m);
+    #define DEBUG_printf(m,n)         Serial_printf(m,n);
   #endif
 #else
-  #define DEBUG_print(m)         ;
-  #define DEBUG_printf(m,n)      ;
+  #define DEBUG_print(m)              ;
+  #define DEBUG_printf(m,n)           ;
 #endif
 
-#define WIFI_STA_Connected()     (WiFi.status()==WL_CONNECTED)
+#define WIFI_STA_Connected()         (WiFi.status()==WL_CONNECTED)
 
 bool notifyProxy(ushort, String="");
 bool readConfig(bool=true);
 void writeConfig();
 ulong time(bool b=false);
 
-inline bool isNow(ulong v)       {ulong ms(millis()); return((v<ms) && (ms-v)<INFINY);}  //Because of millis() rollover:
-inline bool isTimeSynchronized() {return(now()>946684800L);}
-inline ulong getCounter()        {return counterValue/10L;}
+inline bool isNow(ulong v)                    {ulong ms(millis()); return((v<ms) && (ms-v)<INFINY);}  //Because of millis() rollover:
+inline bool isTimeSynchronized(ulong t=now()) {return(t>-1UL/10UL);}
+inline ulong getCounter()                     {return counterValue/10L;}
 
-bool addMQTT(ushort i, ushort j){bool isNew(false);
+bool addMQTT(ushort i, ushort j){
+  bool isNew(false);
   std::vector<String> s;
   std::vector<ushort> n;
   while(mqttFieldName.size()<=i){isNew=true;
@@ -115,7 +116,7 @@ void sendHTML(bool blankPage=false){
   if(!blankPage){
     WEB_F(" <title>");
     WEB_S(hostname);
-    WEB_F("</title>\n\
+    WEB_F(" Water Meter</title>\n\
 <style>\n\
  *{margin:0; padding:0;}\n\
  body, html{height:100%;}\n\
@@ -260,10 +261,10 @@ As long as no SSID is set and it is not connected to a master, the device acts a
     WEB_F("</section>\n\n<footer>\n<h6>(<div id='date' style='display:inline-block;'></div>V");
     WEB_S(String(ResetConfig,DEC));
     WEB_F(", Uptime: ");
-    ulong sec=millis()/1000L;
-    WEB_S(String(sec/(24L*3600L)) + "d-");
-    WEB_S(String((sec%=24L*3600L)/3600L) + "h-");
-    WEB_S(String((sec%=3600L)/60L) + "mn");
+    ulong sec=millis()/1000UL;
+    WEB_S(String(sec/(24UL*3600UL)) + "d-");
+    WEB_S(String((sec%=24UL*3600UL)/3600UL) + "h-");
+    WEB_S(String((sec%=3600UL)/60UL) + "mn");
     WEB_F(")</h6>\n\
 </footer>\n\
 \n\
@@ -594,7 +595,7 @@ bool WiFiConnect(){
 
 inline void reboot(){writeConfig(); ESP.restart();}
 
-void memoryTest(){
+inline void memoryTest(){
 #ifdef MEMORYLEAKS
   ulong f=ESP.getFreeHeap();
   if(f<MEMORYLEAKS) reboot();
@@ -602,7 +603,35 @@ void memoryTest(){
 #endif
 }
 
-inline void onSTAConnect(){;}
+inline void onConnect(){
+  ;
+#ifdef DEBUG
+  if(!WiFiAP){
+    telnetServer.begin();
+    telnetServer.setNoDelay(true);
+  }
+#endif
+}
+
+inline void ifConnected(){
+  MDNS.update();
+  if(!isTimeSynchronized()){
+    DEBUG_print("Retry NTP synchro...\n");
+    NTP.getTime();
+  }
+#ifdef DEBUG
+  if(!WiFiAP){
+    if(telnetServer.hasClient()){  //Telnet client connection:
+      if (!telnetClient || !telnetClient.connected()){
+        if(telnetClient){
+          telnetClient.stop();
+          DEBUG_print("Telnet Client Stop\n");
+        }telnetClient=telnetServer.available();
+        telnetClient.flush();
+        DEBUG_print("New Telnet client connected...\n");
+  } } }
+#endif
+}
 
 void connectionTreatment(){                              //Test connexion/Check WiFi every mn:
   if(isNow(next_reconnect)){
@@ -612,26 +641,8 @@ void connectionTreatment(){                              //Test connexion/Check 
 #ifdef DEFAULTWIFIPASS
     if( (!WiFiAP && !WIFI_STA_Connected()) || (WiFiAP && ssid[0].length() && !WifiAPTimeout--) ){
       if(WiFiConnect())
-#ifdef DEBUG
-      { telnetServer.begin();
-        telnetServer.setNoDelay(true);
-        onSTAConnect();
-    } }
-    else if(telnetServer.hasClient()){                   //Telnet client connection:
-      if (!telnetClient || !telnetClient.connected()){
-        if(telnetClient){
-          telnetClient.stop();
-          DEBUG_print("Telnet Client Stop\n");
-        }telnetClient=telnetServer.available();
-        telnetClient.flush();
-        DEBUG_print("New Telnet client connected...\n");
-      }
-#endif
-  ;}MDNS.update();
-  if(!isTimeSynchronized()){
-    DEBUG_print("Retry NTP synchro...\n");
-    NTP.getTime();
-  }
+        onConnect();
+    }else ifConnected();
 #endif
 } }
 
@@ -649,12 +660,6 @@ void handleSubmitSSIDConf(){                              //Setting:
     ssid[count]=ESPWebServer.arg("SSID");
     password[count]=ESPWebServer.arg("password");
 } }
-
-inline bool handlePlugIdentSubmit(ushort i){               //Set outputs names:
-  if(ESPWebServer.hasArg("plugIdent"+(String)i) && ESPWebServer.arg("plugIdent"+String(i, DEC)))
-    return true;
-  return false;
-}
 
 inline bool handleCounterNameSubmit(ushort i){               //Set outputs names:
   if(ESPWebServer.hasArg("counterName"+String(i, DEC)) && ESPWebServer.arg("counterName"+String(i, DEC)))
@@ -717,11 +722,8 @@ void  handleRoot(){ bool w, blankPage=false;
   }else if((w=ESPWebServer.hasArg("password"))){
     handleSubmitSSIDConf(); shiftSSID();                  //Set WiFi connections
     if(WiFiAP && ssid[0].length()) WiFiConnect();
-  }else if(ESPWebServer.hasArg("plugNum")){
-    w|=handleSubmitMQTTConf(atoi(ESPWebServer.arg("plugNum").c_str()));
   }else{
-    w|=handlePlugIdentSubmit(0);                          //Set plug name
-    w|=handleCounterNameSubmit(0);                        //Set plug name
+    w|=handleCounterNameSubmit(0);                        //Set counter name
   }if(w) writeConfig();
   sendHTML(blankPage);
 }
@@ -764,8 +766,8 @@ bool mqttNotify(const String& msg, const ushort n){
   } }
   DEBUG_print("MQTT server \"" + mqttBroker + ":" + String(mqttPort,DEC) + "\" not found...\n");
   return false;
-}inline bool mqttNotify(ulong volume)  {return(mqttNotify(String(volume, DEC), 0));}  //Volume notification
-inline  bool mqttNotify(String message){return(mqttNotify(message, 1));}              //Warning on possible leaks
+}inline bool mqttNotify(String message){return(mqttNotify(message, 1));}              //Warning on possible leaks
+inline  bool mqttNotify(ulong volume)  {return(mqttNotify(String(volume, DEC), 0));}  //Volume notification
 
 void getDataFile(){
   File f;
@@ -813,30 +815,11 @@ bool deleteSPIFFSDataFile(bool b){
 void deleteDataFile(bool b=false) {deleteSPIFFSDataFile(b);}
 bool isRemovingDataFile()         {return deleteSPIFFSDataFile(false);};
 
-void dailyDataWrite(const ulong& h){
-  if(!isRemovingDataFile() && isNow(next_dataFileStorage)){
-    File f;
-    if(SPIFFS.begin() && (f=SPIFFS.open("dataStorage", "a"))){
-      for (std::map<ulong,ulong>::iterator it=dailyData.begin(); it!=dailyData.end(); it++){
-        f.print(it->first);
-        f.print(",");
-        f.print(it->second);
-        f.print("\n");
-      }f.close(); SPIFFS.end();
-      dailyData.erase( dailyData.begin(), dailyData.end() );
-      next_dataFileStorage = millis() + 3600000UL;
-      DEBUG_print("SPIFFS Data writed...\n");
-    }else{
-      DEBUG_print("Cannot open data file!...\n");
-} } }
-
 bool reindexMap(){
-  if(isTimeSynchronized()){
-    for (std::map<ulong,ulong>::iterator it=dailyData.begin(); it!=dailyData.end(); it++){
-      if(it->first < (-1UL)/1000UL){
-        std::pair<ulong,ulong> v(it->first+now(),it->second);
-        dailyData.erase(it); dailyData.insert(v);
-      }else  break;
+  if(isTimeSynchronized() && dailyData.size()){
+    while(!isTimeSynchronized(dailyData.begin()->first)){
+      std::pair<ulong,ulong> v(dailyData.begin()->first+now()-millis()/1000UL, dailyData.begin()->second);
+      dailyData.erase(dailyData.begin()); dailyData.insert(v);
     }return true;
   }return false;
 }
@@ -844,19 +827,37 @@ bool reindexMap(){
 inline ulong currentHour(const ulong& h) {return ((h/3600UL )*3600UL );}
 inline ulong currentDay (const ulong& d) {return ((d/86400UL)*86400UL);}
 
-void dataStorage(){   // Every hours...
-  static bool timeIsSync=false;
-  if(isNow(next_dataStorage)){
-    ulong sec=now();
-    if(!timeIsSync) timeIsSync=reindexMap();
-    if(sec-currentHour(sec)<60UL){
-      dailyData[currentHour(sec)]=getCounter();
+void dataFileWrite(){
+  if(!isRemovingDataFile() && reindexMap()){
+    File f;
+    if(SPIFFS.begin() && (f=SPIFFS.open("dataStorage", "a"))){
+      while(dailyData.size()){
+        f.print(dailyData.begin()->first);
+        f.print(",");
+        f.print(dailyData.begin()->second);
+        f.print("\n");
+        dailyData.erase(dailyData.begin());
+      }f.close(); SPIFFS.end();
+      DEBUG_print("SPIFFS Data writed...\n");
+    }else{
+      DEBUG_print("Cannot open data file!...\n");
+} } }
+
+void pushData(){   // Every hours...
+  static ulong next_pushData=PUSHDATA_DELAY*1000UL;
+  if(isNow(next_pushData)){
+    ulong sec(now());
+    if((sec-=currentHour(sec))<PUSHDATA_DELAY){
+      dailyData[currentHour(now())]=getCounter();
       DEBUG_print("Data writed...\n");
       mqttNotify(getCounter());
-      if(timeIsSync) dailyDataWrite(sec);
-      sec=0UL;
-    }next_dataStorage=(currentHour(now()) + 3540UL - sec)*1000UL;
-} }
+      dataFileWrite();
+    }if(!isTimeSynchronized())
+      next_pushData=millis()+PUSHDATA_DELAY*1000UL;
+    else
+      next_pushData=(3600UL - sec)*1000UL;
+  }deleteDataFile();
+}
 
 //Gestion des switchs/Switchs management
 void ICACHE_RAM_ATTR counterInterrupt(){intr=true;}
@@ -945,9 +946,8 @@ void loop(){
   ESPWebServer.handleClient(); delay(1L);
 
   connectionTreatment();                //WiFi watcher
-  interruptTreatment();                 //Gestion du compteurs/Counter management
-  dataStorage();                        //Save data on SPIFFS
+  interruptTreatment();                 //Gestion du compteur/Counter management
+  pushData();                           //add data
   leakChecker();                        //Check for leaks...
-  deleteDataFile();
  }
 // ***********************************************************************************************
