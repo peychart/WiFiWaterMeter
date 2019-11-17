@@ -38,7 +38,7 @@ bool                                  WiFiAP(false);
 #define MAX_LEAKNOTIF_PERIOD          25200000UL
 #define MIN_MAXCONSUM_TIME            60000UL
 #define MAX_MAXCONSUM_TIME            3600000UL
-#define PUSHDATA_DELAY                120UL
+#define PUSHDATA_DELAY                300UL
 ulong                                 next_reconnect(0UL),
                                       next_leakCheck(0UL), next_leakDetected(MIN_LEAKNOTIF_PERIOD),
                                       leakNotifPeriod(MIN_LEAKNOTIF_PERIOD), maxConsumTime(MIN_MAXCONSUM_TIME);
@@ -169,7 +169,9 @@ As long as no SSID is set and it is not connected to a master, the device acts a
     sendHTML_button("", F("Submit"), F("onclick='submit();'"));
     WEB_F("</form>\n</td><td style='text-align: center;'>\n<form method='POST'>");
     sendHTML_button(F("restart"), F("Save Data"), F("onclick='submit();'")); sendHTML_checkbox("reboot", true, "style='display:none;'");
-    WEB_F("</form>\n</td></tr></table>\n<br><h3>Network connection:</h3><table><tr>");
+    WEB_F("</form>\n</td></tr></table>\n<br><h3>Network connection [");
+    WEB_S(WiFi.macAddress());
+    WEB_F("]:</h3><table><tr>");
     for(ushort i(0); i<SSIDCount(); i++){
       WEB_F("<td>\n<form method='POST'><table>\n<tr><td>SSID ");
       WEB_S(String(i+1, DEC));
@@ -191,8 +193,8 @@ As long as no SSID is set and it is not connected to a master, the device acts a
 <!MAIN SECTION>\n\
 <section>");
 
-    WEB_F("<table id='main' style='width: 100%'><col width='145px'><col width='260px'><tr>\n<td>\n<h3>");
-    WEB_S(hostname); WEB_F("</h3>\n\
+    WEB_F("<table id='main' style='width: 100%'><col width='175px'><col width='260px'><tr>\n<td>\n<h3>");
+    WEB_S(hostname); WEB_F(": </h3>\n\
 </td><td>\n<form id='0'>\n\
 	<canvas id='canvasOdometer' width='100' height='40' onclick='initConfPopup(this);'></canvas>\n\
 </form></td><td>\n<form id='1'>\n\
@@ -722,6 +724,8 @@ void  handleRoot(){ bool w, blankPage=false;
   }else if((w=ESPWebServer.hasArg("password"))){
     handleSubmitSSIDConf(); shiftSSID();                  //Set WiFi connections
     if(WiFiAP && ssid[0].length()) WiFiConnect();
+  }else if(ESPWebServer.hasArg("plugNum")){
+    w|=handleSubmitMQTTConf(atoi(ESPWebServer.arg("plugNum").c_str()));
   }else{
     w|=handleCounterNameSubmit(0);                        //Set counter name
   }if(w) writeConfig();
@@ -816,8 +820,8 @@ void deleteDataFile(bool b=false) {deleteSPIFFSDataFile(b);}
 bool isRemovingDataFile()         {return deleteSPIFFSDataFile(false);};
 
 bool reindexMap(){
-  if(isTimeSynchronized() && dailyData.size()){
-    while(!isTimeSynchronized(dailyData.begin()->first)){
+  if(isTimeSynchronized()){
+    if(dailyData.size()) while(!isTimeSynchronized(dailyData.begin()->first)){
       std::pair<ulong,ulong> v(dailyData.begin()->first+now()-millis()/1000UL, dailyData.begin()->second);
       dailyData.erase(dailyData.begin()); dailyData.insert(v);
     }return true;
@@ -828,6 +832,7 @@ inline ulong currentHour(const ulong& h) {return ((h/3600UL )*3600UL );}
 inline ulong currentDay (const ulong& d) {return ((d/86400UL)*86400UL);}
 
 void dataFileWrite(){
+  DEBUG_print("Trying data file write...\n");
   if(!isRemovingDataFile() && reindexMap()){
     File f;
     if(SPIFFS.begin() && (f=SPIFFS.open("dataStorage", "a"))){
