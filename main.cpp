@@ -38,7 +38,7 @@ bool                                  WiFiAP(false);
 #define MAX_LEAKNOTIF_PERIOD          25200000UL
 #define MIN_MAXCONSUM_TIME            60000UL
 #define MAX_MAXCONSUM_TIME            3600000UL
-#define PUSHDATA_DELAY                300UL
+#define PUSHDATA_DELAY                120UL
 ulong                                 next_reconnect(0UL),
                                       next_leakCheck(0UL), next_leakDetected(MIN_LEAKNOTIF_PERIOD),
                                       leakNotifPeriod(MIN_LEAKNOTIF_PERIOD), maxConsumTime(MIN_MAXCONSUM_TIME);
@@ -83,7 +83,8 @@ ulong time(bool b=false);
 
 inline bool isNow(ulong v)                    {ulong ms(millis()); return((v<ms) && (ms-v)<INFINY);}  //Because of millis() rollover:
 inline bool isTimeSynchronized(ulong t=now()) {return(t>-1UL/10UL);}
-inline ulong getCounter()                     {return counterValue/10L;}
+inline ulong getCounter()                     {return(counterValue/10UL);}
+inline float getIndex(ulong v=counterValue)   {return(v/10000.0);}
 
 bool addMQTT(ushort i, ushort j){
   bool isNew(false);
@@ -116,7 +117,7 @@ void sendHTML(bool blankPage=false){
   if(!blankPage){
     WEB_F(" <title>");
     WEB_S(hostname);
-    WEB_F(" Water Meter</title>\n\
+    WEB_F("</title>\n\
 <style>\n\
  *{margin:0; padding:0;}\n\
  body, html{height:100%;}\n\
@@ -194,7 +195,7 @@ As long as no SSID is set and it is not connected to a master, the device acts a
 <section>");
 
     WEB_F("<table id='main' style='width: 100%'><col width='175px'><col width='260px'><tr>\n<td>\n<h3>");
-    WEB_S(hostname); WEB_F(": </h3>\n\
+    WEB_S(counterName); WEB_F(": </h3>\n\
 </td><td>\n<form id='0'>\n\
 	<canvas id='canvasOdometer' width='100' height='40' onclick='initConfPopup(this);'></canvas>\n\
 </form></td><td>\n<form id='1'>\n\
@@ -285,7 +286,7 @@ function RequestStatus(){var ret,req=new XMLHttpRequest();\n\
   var s='No NTP sync', v=parseInt(ret.substring(ret.indexOf('[')+1,ret.indexOf(',')));\n\
   if(v>946684800){s=(new Date(v*1000)).toISOString();s=s.substring(0,s.indexOf('T')).split('-').join('/');}\n\
   document.getElementById('date').innerHTML=s + '&nbsp;-&nbsp;';\n\
-  odometer.setValue(parseInt(ret.substring(ret.indexOf(',')+1,ret.indexOf(']')))/1000.0);\n\
+  odometer.setValue(parseFloat(ret.substring(ret.indexOf(',')+1,ret.indexOf(']'))));\n\
 }}\n\
 function showHelp(){refresh(120);document.getElementById('about').style.display='block';}\n\
 function saveSSID(e){var f,s;\n\
@@ -328,8 +329,9 @@ function mqttRawAdd(){var t;for(t=document.getElementById('mqttPlus');t.tagName!
  td.appendChild(i=document.createElement('input'));i.id=i.name='mqttFieldName'+n;i.type='text';i.style='width:80%;';\n\
  tr.appendChild(td=document.createElement('td'));td.style='text-align:center;';\n\
  td.appendChild(i=document.createElement('select'));i.id=i.name='mqttNature'+n;i.setAttribute('onchange','refreshConfPopup();');i.style='width:80%;text-align:center;';\n\
- i.appendChild(j=document.createElement('option'));j.value='0';j.innerHTML=(document.getElementById('plugNum').value=='0' ?'Counter-value' :'Warning-notification');\n\
- i.appendChild(j=document.createElement('option'));j.value='1';j.innerHTML='Constant';\n\
+ i.appendChild(j=document.createElement('option'));j.value='0';j.innerHTML=(document.getElementById('plugNum').value=='0' ?'Counter-value' :'Warning-level');\n\
+ if(document.getElementById('plugNum').value=='1') {i.appendChild(j=document.createElement('option'));j.value='1';j.innerHTML='Warning-message';}\n\
+ i.appendChild(j=document.createElement('option'));j.value='2';j.innerHTML='Constant';\n\
  tr.appendChild(td=document.createElement('td'));td.style='text-align:center;';\n\
  td.appendChild(i=document.createElement('select'));i.id=i.name='mqttType'+n;i.setAttribute('onchange','refreshConfPopup();');i.style='width:80%;text-align:center;';\n\
  i.appendChild(j=document.createElement('option'));j.value='0';j.innerHTML='String';\n\
@@ -363,7 +365,7 @@ function refreshConfPopup(){\n\
  for(var b,v,i=0,r=document.getElementById('mqttRaws').getElementsByTagName('TR');i<r.length-1;i++)\n\
   if((b=r[i+1].getElementsByTagName('B')).length){\n\
    b[0].innerHTML=b[1].innerHTML=(document.getElementById('mqttType'+i).value==='0'?'\"':'');\n\
-   b[0].style.display=b[1].style.display=document.getElementById('mqttValue'+i).style.display=(document.getElementById('mqttNature'+i).value==='0'?'none' :'inline-block');\n\
+   b[0].style.display=b[1].style.display=document.getElementById('mqttValue'+i).style.display=(document.getElementById('mqttNature'+i).value==='2'?'inline-block' :'none');\n\
   }\n\
  setDisabled(document.getElementById('mqttParams').getElementsByTagName('input'),!document.getElementById('mqttEnable').checked);\n\
  setDisabled(document.getElementById('mqttParams').getElementsByTagName('select'),!document.getElementById('mqttEnable').checked);\n\
@@ -663,13 +665,6 @@ void handleSubmitSSIDConf(){                              //Setting:
     password[count]=ESPWebServer.arg("password");
 } }
 
-inline bool handleCounterNameSubmit(ushort i){               //Set outputs names:
-  if(ESPWebServer.hasArg("counterName"+String(i, DEC)) && ESPWebServer.arg("counterName"+String(i, DEC)))
-    if(counterName!=ESPWebServer.arg("counterName"+String(i, DEC)))
-      return(counterName=ESPWebServer.arg("counterName"+String(i, DEC)));
-  return false;
-}
-
 #define setMQTT_S(n,m) if(            ESPWebServer.arg(n)         !=m){m=     ESPWebServer.arg(n);         isNew=true;};
 #define setMQTT_N(n,m) if((ulong)atol(ESPWebServer.arg(n).c_str())!=m){m=atol(ESPWebServer.arg(n).c_str());isNew=true;};
 inline void check_leakNotifPeriod(){
@@ -726,8 +721,6 @@ void  handleRoot(){ bool w, blankPage=false;
     if(WiFiAP && ssid[0].length()) WiFiConnect();
   }else if(ESPWebServer.hasArg("plugNum")){
     w|=handleSubmitMQTTConf(atoi(ESPWebServer.arg("plugNum").c_str()));
-  }else{
-    w|=handleCounterNameSubmit(0);                        //Set counter name
   }if(w) writeConfig();
   sendHTML(blankPage);
 }
@@ -742,7 +735,7 @@ void setIndex(){
     if(val) counterValue=val*10L;
 } }
 
-bool mqttNotify(const String& msg, const ushort n){
+bool mqttNotify(ushort n){
   if(!mqttEnable[n]) return true;
   if(mqttBroker.length()){
     mqttClient.setServer(mqttBroker.c_str(), mqttPort);
@@ -751,16 +744,16 @@ bool mqttNotify(const String& msg, const ushort n){
     if(mqttClient.connected()){
       String s="{";
       for(ushort i(0); i<mqttEnable[n]; i++){
-        if(mqttNature[n][i] || (!getCounter()&&mqttValue[n][i].length())){
-          if(i) s+=",";
-          s+="\n \"" + mqttFieldName[n][i] + "\": ";
-          if(mqttType[n][i]==0) s+= "\"";
-          if(!mqttNature[n][i])
-                s+= mqttValue[n][i];
-          else  s+= msg;
-          if(mqttType[n][i]==0) s+= "\"";
-      } }
-      if(s=="{"){
+        if(i) s+=",";
+        s+="\n \"" + mqttFieldName[n][i] + "\": ";
+        if(mqttType[n][i]==0) s+= "\"";   //type "String"
+        if(mqttNature[n][i]==0)           //Counter-value or Warning-level
+              s+=(n ?String(leakStatus,DEC) :String(getIndex(),3));
+        else if(!mqttNature[n][i]==1)
+              s+=leakMsg;                     //Warning-message
+        else  s+=mqttValue[n][i];         //Constant
+        if(mqttType[n][i]==0) s+= "\"";
+      }if(s=="{"){
         DEBUG_print("Nothing to published to \"" + mqttBroker + "\"!\n");
         return false;
       }s+="\n}\n";
@@ -770,23 +763,23 @@ bool mqttNotify(const String& msg, const ushort n){
   } }
   DEBUG_print("MQTT server \"" + mqttBroker + ":" + String(mqttPort,DEC) + "\" not found...\n");
   return false;
-}inline bool mqttNotify(String message){return(mqttNotify(message, 1));}              //Warning on possible leaks
-inline  bool mqttNotify(ulong volume)  {return(mqttNotify(String(volume, DEC), 0));}  //Volume notification
+}inline bool mqttNotifyIndex  (void){return(mqttNotify(1));}  //Warning on possible leaks
+inline  bool mqttNotifyWarning(void){return(mqttNotify(0));}  //Volume notification
 
 void getDataFile(){
   File f;
   ESPWebServer.setContentLength(CONTENT_LENGTH_UNKNOWN);
   ESPWebServer.send(200, "text/plain");
   if(SPIFFS.begin() && (f=SPIFFS.open("dataStorage", "r"))){
-    ESPWebServer.sendContent(F("["));
+    ESPWebServer.sendContent(F("[\n"));
     for(String s=readString(f); s.length(); ){
-      ESPWebServer.sendContent("\n {\n  \"date\": ");
-      ESPWebServer.sendContent(s.substring(0, s.indexOf(",")));
-      ESPWebServer.sendContent(",\n  \"index\": ");
-      ESPWebServer.sendContent(s.substring(s.indexOf(",")+1));
-      ESPWebServer.sendContent("\n }");
+      ESPWebServer.sendContent(" [");
+      ESPWebServer.sendContent(s.substring(0,s.indexOf(",")));
+      ESPWebServer.sendContent(",");
+      ESPWebServer.sendContent(String(getIndex((ulong)atol(s.substring(s.indexOf(",")+1).c_str())*10UL),3));
+      ESPWebServer.sendContent("]");
       if((s=readString(f)).length())
-        ESPWebServer.sendContent(",");
+        ESPWebServer.sendContent(",\n");
       else
         ESPWebServer.sendContent("\n]\n");
   } }
@@ -819,17 +812,17 @@ bool deleteSPIFFSDataFile(bool b){
 void deleteDataFile(bool b=false) {deleteSPIFFSDataFile(b);}
 bool isRemovingDataFile()         {return deleteSPIFFSDataFile(false);};
 
+inline ulong currentHour(const ulong& h) {return ((h/3600UL )*3600UL );}
+inline ulong currentDay (const ulong& d) {return ((d/86400UL)*86400UL);}
+
 bool reindexMap(){
   if(isTimeSynchronized()){
     if(dailyData.size()) while(!isTimeSynchronized(dailyData.begin()->first)){
-      std::pair<ulong,ulong> v(dailyData.begin()->first+now()-millis()/1000UL, dailyData.begin()->second);
+      std::pair<ulong,ulong> v(currentHour(dailyData.begin()->first+now()-millis()/1000UL), dailyData.begin()->second);
       dailyData.erase(dailyData.begin()); dailyData.insert(v);
     }return true;
   }return false;
 }
-
-inline ulong currentHour(const ulong& h) {return ((h/3600UL )*3600UL );}
-inline ulong currentDay (const ulong& d) {return ((d/86400UL)*86400UL);}
 
 void dataFileWrite(){
   DEBUG_print("Trying data file write...\n");
@@ -843,7 +836,7 @@ void dataFileWrite(){
         f.print("\n");
         dailyData.erase(dailyData.begin());
       }f.close(); SPIFFS.end();
-      DEBUG_print("SPIFFS Data writed...\n");
+      DEBUG_print("SPIFFS Data writed.\n");
     }else{
       DEBUG_print("Cannot open data file!...\n");
 } } }
@@ -851,16 +844,14 @@ void dataFileWrite(){
 void pushData(){   // Every hours...
   static ulong next_pushData=PUSHDATA_DELAY*1000UL;
   if(isNow(next_pushData)){
+    DEBUG_print("Look for pushing data...\n");
     ulong sec(now());
-    if((sec-=currentHour(sec))<PUSHDATA_DELAY){
+    if((sec-=currentHour(sec))<PUSHDATA_DELAY*2L){
       dailyData[currentHour(now())]=getCounter();
-      DEBUG_print("Data writed...\n");
-      mqttNotify(getCounter());
+      DEBUG_print("Data pushed.\n");
+      mqttNotifyIndex();
       dataFileWrite();
-    }if(!isTimeSynchronized())
-      next_pushData=millis()+PUSHDATA_DELAY*1000UL;
-    else
-      next_pushData=(3600UL - sec)*1000UL;
+    }next_pushData = millis() + (isTimeSynchronized() ?((3600UL - sec)*1000UL) :(PUSHDATA_DELAY*1000UL));
   }deleteDataFile();
 }
 
@@ -872,7 +863,7 @@ void interruptTreatment(){
     delay(DEBOUNCE_DELAY);
     if(!digitalRead(COUNTERPIN)){ //Counter++ on falling pin...
       counterValue+=multiplier;
-      DEBUG_print("Counter: " + String(getCounter(), DEC) + "\n");
+      DEBUG_print("Counter: " + String(counterValue, DEC) + "\n");
       next_leakCheck=millis() + maxConsumTime;
       intr=false;
 } } }
@@ -885,7 +876,7 @@ void leakChecker(){
   }else if(isNow(next_leakDetected)){  // ...in control period.
     if(++leakStatus > LEAKDETECTLIMITE){
       DEBUG_print("Leak notification!...\n");
-      mqttNotify(leakMsg);
+      mqttNotifyWarning();
     }next_leakDetected=millis() + leakNotifPeriod;
 } }
 
@@ -910,9 +901,9 @@ void setup(){
   //Definition des URLs d'entree /Input URL definitions
   ESPWebServer.on("/",           [](){handleRoot();      ESPWebServer.client().stop();});
   ESPWebServer.on("/restart",    [](){reboot();});
-  ESPWebServer.on("/data",       [](){getDataFile();});
-  ESPWebServer.on("/removeData", [](){deleteDataFile();});
-  ESPWebServer.on("/index",      [](){setIndex(); ESPWebServer.send(200, "text/plain", "[" + String(now(), DEC) + "," + String(getCounter(), DEC) + "]");});
+  ESPWebServer.on("/historic",   [](){getDataFile();});
+  ESPWebServer.on("/clearData",  [](){deleteDataFile();});
+  ESPWebServer.on("/index",      [](){setIndex(); ESPWebServer.send(200, "text/plain", "[" + String(now(), DEC) + "," + String(getIndex(), 3) + "]");});
 //ESPWebServer.on("/about",      [](){ ESPWebServer.send(200, "text/plain", getHelp()); });
   ESPWebServer.onNotFound(       [](){ESPWebServer.send(404, "text/plain", "404: Not found");});
 
