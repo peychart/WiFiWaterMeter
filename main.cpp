@@ -80,8 +80,7 @@ ulong time(bool b=false);
 
 inline bool   isNow(ulong v)                    {ulong ms(millis()); return((v<ms) && (ms-v)<INFINY);}  //Because of millis() rollover:
 inline bool   isTimeSynchronized(ulong t=now()) {return(t>-1UL/10UL);}
-inline ulong  getCounter()                      {return(counterValue/10UL);}
-inline String getIndex(ulong v=counterValue)    {return String(v/1000.0, 3);}
+inline String getCounter(ulong c=counterValue)  {return String(c/(UNIT_DISPLAY*10.0), 1+log10(UNIT_DISPLAY));}
 
 bool addMQTT(ushort i, ushort j){
   bool isNew(false);
@@ -252,7 +251,7 @@ As long as no SSID is set and it is not connected to a master, the device acts a
       WEB_F("dl/pulse</div><div style='display:none;'>");
       sendHTML_inputNumber(F("maxConsumTime"), String(maxConsumTime/60000L, DEC), "min=" + String(MIN_MAXCONSUM_TIME/60000L, DEC) + " max=" + String(MAX_MAXCONSUM_TIME/60000L, DEC) + " style='width:50px;text-align:right;'");
       WEB_F("mn</div></td>\n<td id='param3' align=center><div style='display:inline-block;'>");
-      sendHTML_inputNumber(F("counterValue"), String(getCounter(), DEC), F("min=0 max=999999999 style='width:80px;text-align:right;'"));
+      sendHTML_inputNumber(F("counterValue"), String(counterValue/10.0, 1), F("min=0 max=999999999.9 style='width:85px;text-align:right;'"));
       WEB_F("liters</div><div style='display:none;'>");
       sendHTML_inputText(F("leakMsg"), leakMsg, F("style='width:210px;'"));
       WEB_F("</div></td></tr>\n</table>\n");
@@ -303,7 +302,9 @@ function RequestStatus(){var ret,req=new XMLHttpRequest();\n\
   var s='No NTP sync', v=parseInt(ret.substring(ret.indexOf('[')+1,ret.indexOf(',')));\n\
   if(v>946684800){s=(new Date(v*1000)).toISOString();s=s.substring(0,s.indexOf('T')).split('-').join('/');}\n\
   document.getElementById('date').innerHTML=s + '&nbsp;-&nbsp;';\n\
-  odometer.setValue(parseFloat(ret.substring(ret.indexOf(',')+1,ret.indexOf(']'))));\n\
+  odometer.setValue( parseFloat(ret.substring(ret.indexOf(',')+1,ret.indexOf(']')))/1000.0*");
+      WEB_S(String(UNIT_DISPLAY*1.0, 1));
+      WEB_F(");\n\
 }}\n\
 function showHelp(){");
       if(!authorizedIP())
@@ -697,9 +698,9 @@ inline void check_leakNotifPeriod(){
   maxConsumTime=min(maxConsumTime, MAX_MAXCONSUM_TIME);
   maxConsumTime=max(maxConsumTime, MIN_MAXCONSUM_TIME);
 }bool handleSubmitMQTTConf(ushort n){
-  bool isNew(false);
+  bool isNew(false); String count(counterValue/10.0, 1);
   setMQTT_S("counterName",     counterName    );
-  setMQTT_N("counterValue",    counterValue   ); counterValue*=10L;
+  setMQTT_S("counterValue",    count          ); counterValue=(ulong)(atof(count.c_str())*10.0);
   setMQTT_N("multiplier",      multiplier     );
   setMQTT_N("leakNotifPeriod", leakNotifPeriod); check_leakNotifPeriod();
   setMQTT_N("maxConsumTime",   maxConsumTime  ); check_maxConsumTime();
@@ -750,11 +751,11 @@ void setIndex(){
   String v;
   v=counterName; v.toLowerCase();
   if ((v=ESPWebServer.arg(v))!=""){
-    ulong val;
-    val=atol(v.c_str());
-    DEBUG_print("HTTP request on counter(" + counterName + ") value: " + String(val, DEC) + "...\n");
-    if(val) counterValue=val*10L;
-} }
+    float val(atof(v.c_str()));
+    if(val){
+      counterValue=val*UNIT_DISPLAY;
+      DEBUG_print("HTTP request on counter(" + counterName + ") value: " + String(val, DEC) + "...\n");
+} } }
 
 bool mqttNotify(ushort n){
   if(!mqttEnable[n]) return true;
@@ -768,9 +769,10 @@ bool mqttNotify(ushort n){
         if(i) s+=",";
         s+="\n \"" + mqttFieldName[n][i] + "\": ";
         if(mqttType[n][i]==0) s+= "\"";   //type "String"
-        if(mqttNature[n][i]==0)           //Counter-value or Warning-level
-              s+=(n ?String(leakStatus,DEC) :getIndex());
-        else if(!mqttNature[n][i]==1)
+        if(mqttNature[n][i]==0){          //Counter-value or Warning-level
+          if(n) s+=String(leakStatus, DEC);
+          else  s+=getCounter();
+        }else if(!mqttNature[n][i]==1)
               s+=leakMsg;                     //Warning-message
         else  s+=mqttValue[n][i];         //Constant
         if(mqttType[n][i]==0) s+= "\"";
@@ -792,7 +794,7 @@ void getData(std::map<ulong,ulong>& d){
     ESPWebServer.sendContent("\n  [");
     ESPWebServer.sendContent(String(it->first, DEC));
     ESPWebServer.sendContent(",");
-    ESPWebServer.sendContent(getIndex(it->second));
+    ESPWebServer.sendContent(getCounter(it->second));
     ESPWebServer.sendContent("]");
     if((++it)!=dailyData.end())
       ESPWebServer.sendContent(",");
@@ -806,7 +808,7 @@ DEBUG_print("Open: "); DEBUG_print(fileName); DEBUG_print("\n");
       ESPWebServer.sendContent("\n  [");
       ESPWebServer.sendContent(s.substring(0,s.indexOf(",")));
       ESPWebServer.sendContent(",");
-      ESPWebServer.sendContent(getIndex((ulong)atol(s.substring(s.indexOf(",")+1).c_str())*10UL));
+      ESPWebServer.sendContent(getCounter((ulong)atol(s.substring(s.indexOf(",")+1).c_str())));
       ESPWebServer.sendContent("]");
       if((s=readString(f)).length())
         ESPWebServer.sendContent(",");
@@ -886,7 +888,7 @@ void pushData(){   // Every hours...
     DEBUG_print("Look for pushing data...\n");
     ulong sec(now());
     if((sec-=currentHour(sec))<PUSHDATA_DELAY*2L){
-      dailyData[currentHour(now())]=getCounter();
+      dailyData[currentHour(now())]=counterValue;
       DEBUG_print("Data pushed.\n");
       if(isTimeSynchronized())
         mqttNotifyIndex();
@@ -940,7 +942,7 @@ void setup(){
   WiFi.softAPdisconnect(); WiFi.disconnect();
   //Definition des URLs d'entree /Input URL definitions
   ESPWebServer.on("/",             [](){handleRoot(); ESPWebServer.client().stop();});
-  ESPWebServer.on("/index",        [](){setIndex();   ESPWebServer.send(200, "text/plain", "[" + String(now(), DEC) + "," + getIndex() + "]");});
+  ESPWebServer.on("/index",        [](){setIndex();   ESPWebServer.send(200, "text/plain", "[" + String(now(), DEC) + "," + getCounter() + "]");});
   ESPWebServer.on("/historic",     [](){if(authorizedIP()){getHistoric();    }else ESPWebServer.send(403, "text/plain", "403: access denied");});
   ESPWebServer.on("/dayRecords",   [](){if(authorizedIP()){getDayRecords();  }else ESPWebServer.send(403, "text/plain", "403: access denied");});
   ESPWebServer.on("/resetHistoric",[](){if(authorizedIP()){deleteDataFile(); }else ESPWebServer.send(403, "text/plain", "403: access denied");});

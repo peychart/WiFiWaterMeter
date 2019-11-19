@@ -16,6 +16,7 @@ unsigned short ResetConfig =    1;                  //Change this value to reset
 #define COUNTERPIN              D5
 #define DEBOUNCE_DELAY          50UL
 #define MULTIPLIER              5UL                 //Deciliter per pulse...
+#define UNIT_DISPLAY            10L                 // 1L ->unit=Liter, 1000L->unit=m3
 #define DELETEDATAFILE_DELAY    600000UL
 
 #define EXCLUDED_IPV4_FROM_TUNE 192,168,0,100       //Update requests from this (IP & MASK) (HAProxy server?) are prohibited...
