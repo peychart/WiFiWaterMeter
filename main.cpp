@@ -1,9 +1,6 @@
 //Reference: https://www.arduino.cc/en/Reference/HomePage
-//See: http://esp8266.github.io/Arduino/versions/2.1.0-rc1/doc/libraries.html
 //Librairies et cartes ESP8266 sur IDE Arduino: http://arduino.esp8266.com/stable/package_esp8266com_index.json
-//http://arduino-esp8266.readthedocs.io/en/latest/
-//JSon lib: see https://github.com/bblanchon/ArduinoJson.git
-//peychart@netcourrier.com 20171021
+//https://github.com/peychart/WiFiWaterMeter
 // Licence: GNU v3
 #include <string.h>
 #include "FS.h"
@@ -81,10 +78,10 @@ bool readConfig(bool=true);
 void writeConfig();
 ulong time(bool b=false);
 
-inline bool isNow(ulong v)                    {ulong ms(millis()); return((v<ms) && (ms-v)<INFINY);}  //Because of millis() rollover:
-inline bool isTimeSynchronized(ulong t=now()) {return(t>-1UL/10UL);}
-inline ulong getCounter()                     {return(counterValue/10UL);}
-inline float getIndex(ulong v=counterValue)   {return(v/10000.0);}
+inline bool   isNow(ulong v)                    {ulong ms(millis()); return((v<ms) && (ms-v)<INFINY);}  //Because of millis() rollover:
+inline bool   isTimeSynchronized(ulong t=now()) {return(t>-1UL/10UL);}
+inline ulong  getCounter()                      {return(counterValue/10UL);}
+inline String getIndex(ulong v=counterValue)    {return String(v/1000.0, 3);}
 
 bool addMQTT(ushort i, ushort j){
   bool isNew(false);
@@ -100,6 +97,16 @@ bool addMQTT(ushort i, ushort j){
   }return isNew;
 }
 
+bool authorizedIP(IPAddress v=ESPWebServer.client().remoteIP()){
+  IPAddress ip(EXCLUDED_IPV4_FROM_TUNE), mask(EXCLUDED_MASK_FROM_TUNE);
+  ESPWebServer.client().remoteIP();
+  for(ushort i(0); i<4; i++){
+    if((v[i]&mask[i])!=(ip[i]&mask[i]) || !v.isV4())
+      return true;
+  }DEBUG_print("Client: "); DEBUG_print(v); DEBUG_print(" cannot edit setting!\n");
+  return false;
+}
+
 #define WEB_S(n) ESPWebServer.sendContent(n)
 #define WEB_F(n) ESPWebServer.sendContent(F(n))
 void sendHTML_input(String name, String type, String more){
@@ -113,154 +120,164 @@ void  sendHTML_optionSelect(String lib,  String val, String more=""){WEB_S("<opt
 
 void sendHTML(bool blankPage=false){
   ESPWebServer.setContentLength(CONTENT_LENGTH_UNKNOWN);
-  ESPWebServer.send(200, "text/html", F("<!DOCTYPE HTML>\n<html lang='us-US'>\n<head>\n <meta charset='utf-8'/>\n"));
+  ESPWebServer.send(200, "text/html", F("<!DOCTYPE HTML>\n<html lang='us-US'>\n<head>\n\
+ <meta charset='utf-8'>\n\
+ <meta name='author' content='https://github.com/peychart/WiFiWaterMeter'>\n\
+ <meta name='keywords' content='HTML,CSS,JavaScript'>\n"));
   if(!blankPage){
     WEB_F(" <title>");
     WEB_S(hostname);
     WEB_F("</title>\n\
 <style>\n\
- *{margin:0; padding:0;}\n\
- body, html{height:100%;}\n\
- body {\n\
-  color: white;font-size:150%;background-color:green;font-family: Arial,Helvetica,Sans-Serif;\n\
-  background-image:url(https://static.mycity.travel/manage/uploads/7/36/12705/989bd67a1aad43055bd0322e9694f8dd8fab2b43_1080.jpg);/*background-repeat:no-repeat;*/\n\
- }\n\
- #main{max-width:1280px;min-height:100%;margin:0 auto;position:relative;}\n\
- footer{text-align:right;position:absolute;bottom:0;width:100%;padding-top:35px;height:35px;}\n\
- .table {width:100%;\n min-width:700px;\n padding-right:100%;\n height:50px;\n border-spacing: 0px;}\n\
-\n\
- .modal         {display: none;position: fixed;z-index: 1;left: 0%;top: 0%;height: 100%;width: 100%;overflow: scroll;background-color: #000000;}\n\
- .modal-content {background-color: #fff7e6;color: #000088;margin: 5% auto;padding: 15px;border: 2px solid #888;height: 90%;width: 90%;min-height: 755px;}\n\
- .close         {color: #aaa;float: right;font-size: 30px;font-weight: bold;\n}\n\
- .safe          {border: none;height: 48px;width: 48px;cursor: pointer;background-repeat: no-repeat;background: transparent;background-position: center;vertical-align: center;background-image:url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADAAAAAwCAYAAABXAvmHAAAABmJLR0QA/wD/AP+gvaeTAAAErklEQVRoge2ZTUgcZxjH/8/MrAeJtFhXsn600hLd3VgLXbUUUtCQi8XFrGZNW1vooaQVDfReClsovZe6NubQk4eoUVd2TSmE4LEYhRYbbYT0kFiVbpQGF0V3Z54eojHdeXdnZmf0Ev+3fd6P+f3nfXbeL+BEJ3qxRU50Eh4NyztKppklrVViCmiAlwAPAacAgIEUmFaJ+L5GPC+p8p3AQsNsJBLR7D7bloGOWEe1pkl9DHwM4kqLzVdAPKyqcvTnromVQhkKMtA2GnYrrvS3DHwKoKjQh+9rD8Q/kax9HQ/GH1ttbNlAMNbxETP9AKDUalsDbTBT/3Tn5A0rjUwbCAxdcXncyUEQf2adzbyYaWg96b46//n1tJn6pgwE48Fizsg3AbTZojOvW6So4Xgwvm1UUTKqEBi64jpmeAB4nzPyVHg0bPj/MjTgcScHcbzwB7qwU7T3vVGlvCnUPhHqAfGwc0wFiPiDxMWpkZzFuQpCE6FX0sR/Aig7EjDz2iRFrcv1ic2ZQhni73CM8GUlxbmKSrWM/E2uQuEItI13VsmS9gD2JylTqj1diu7mevz6YAW37/0lqrJHinomHow/zC4QjoBC3I9jhlckCefOvIoLZ18XVStiVeoVFegMRCIRiYl7nAYVyedx43Lzm1CkQ4x336iGW5ROmvRJeDQsZ4d1BuYafn8HQJWzqHrVni5FV5MPsnSYxarGuHl3EcktwfxFXLnjSgeywzoDLGmtDrPq5K8o0735A/iltWTOdsR0PjumM0Ca1OgUqEj+ijJ0NZ4Vvvl88ADAgPEIAKi1TZlDduABgIjrsmN6A8Qes0B5vt06+TxuW/AAwICOTTQCp8x01uKtQW9rE3wet2Fdf0UZLjX5bcHvqyQ7YLiYE6nFW4MWbw1kiXCpyZ/XhN20MZLIQCpfA3dJMd6rfe3Z73wmjgB+KzugN8C0lq+H5NY2RmYXkNEODxRkidDd7Ed9VflRwoMAHZtoBJaNOlpe38To7B//M0FE6Ar4UF9VfmRpw0z3s2OiiWzOTGfL65sYv7sEVeNnMSJC6G2fEH587p7tnBex6QxIqnzHbIdLa0lhOone/OKq5RMTnURsOgOBhYZZAI/MdipKpwM5+bUB8DCw0DCfHdSt7mZmZrj2w7pygM6Z7XkjtYP1J1vwVbgh0dO37zA8AAxe7712OzsonAdUVY4C2LPS+/MjcQTwu1AyUVFBzj1xe6zjRzB9YfVJ/oqnu1Ancv45DSRCsauigpwzcXqv6CsAlikWVx87Db9BippzT5zTwC/dY5vMJHR9nGKm3nyHvnnXQtOdkzeYach5LJMijk53To7lq2K4mCvOKH0AYo5BmRQRT6deevKlUT1DA2PdYyopag+AW46QmVMCstY90zqTMapoajkdD8a31/4pvwjia/bZDEQcTb38b8jMyTRQwAVHe6zjMpgG4PypXZKZ+oxyPluWNzSJi1MjLiYvA4MAdq22F2gXwEA67fJahQdsXvK1x9srocr9YOoBUG2x+SMAw1Ay0UQw8XehDI5cs0YiEWnurd8aiek8AwEirmOgEof76xSYVgAss6TN7V+zzjtxzXqiE73o+g+dpfqwtFDpgQAAAABJRU5ErkJggg==');}\n\
- .warning       {border: none;height: 48px;width: 48px;title:'Warning: probable water leak!';cursor: pointer;background-repeat: no-repeat;background: transparent;background-position: center;vertical-align: center;background-image:url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADAAAAAwCAYAAABXAvmHAAAABmJLR0QA/wD/AP+gvaeTAAAChUlEQVRoge2YT2sTQRjGf9Nmd6NFIlHx4EUQPbR48AOIVtFDUD9Bj6LFPwj2JngRBMFiBC9+Bc+CJ8GmQu9SAoIEL7UgDShEoWnavF7aZLvN7szszlbB/Z2WzOy8z5tn5mESKCgoKCj4n1F5LSwLwRUUrwHoq9tqev19HnVyaUCWqNIrfwGpbn/0k75/Wk132q5rjbleEIBe8DQkHuAw4xtP8ijl3AFZ9CcR9QkoRYa2QM6pCxvLLuu5d0BUnb3iAcZBvXRdzmkD0ghuAFcTplySheC6y5rOtpA08WkHy8AZTcUWv7pTqkbXRV13DrSD++jEAwinOBjcdVXWiQMjYlOHs1h148De2NThLFYzOxAXmw/mp/jR8QA4UulRf9iMvuokVrM7EBObXqk/ePa9fnQYHMVqpgaSYtP3ZPAcbiZC5lhN3YA08YHncePhbz3czAgFdXlHkFZHegc0semVhqL9eAcyx2qqBmSJKqhHSXN2O5DQAIDisXw4dDSNlnQOGMRmWLSnayBDrFo3IIv+JHBTNy+8bfxSwhkYLMwtafhnbfXYOxB/29yF8RkYkipWrRowuG0OsDoDQ6xj1bgBXWxGsTwDYUVWsWrugOltc5uwaM/kDOxgGatGd6EUt82sGN9WzRywv21mxThWtQ4k/EhP5Ntambcfj6OAa+e/c+LYus3rYHhb1YsyjM0or96cZHWtDMDX1QM8u/fZdomdWL2cNClxC9nEZpTOb2/ksyXaWI1twDY2o8zUVqhMbFKZ2GSmtpJ2GW2sxp4BaQRzwHz6yg4R5tTF7otRQ0lb6E5OcuwZi9eSz3+j+0h8A8IsitY+ahmNosWWmv3bMgoKCgoK/k3+AILkzValVvu5AAAAAElFTkSuQmCC');}\n\
- .blink {animation: blink 2s steps(5, start) infinite; -webkit-animation: blink 1s steps(5, start) infinite;}\n\
- @keyframes blink {to {visibility: hidden;}}\n\
- @-webkit-keyframes blink {to {visibility: hidden;}}\n\
- .confPopup            {position: relative;opacity: 0;display: none;-webkit-transition: opacity 400ms ease-in;-moz-transition: opacity 400ms ease-in;transition: opacity 400ms ease-in;}\n\
- .confPopup:target     {opacity: 1;display: block;}\n\
- .confPopup > div      {width: 750px;position: fixed;top: 25px;left: 25px;margin: 10% auto;padding: 5px 20px 13px 20px;border-radius: 10px;background: #71a6fc;background: -moz-linear-gradient(#71a6fc, #fff);background: -webkit-linear-gradient(#71a6fc, #999);}\n\
- .closeconfPopup       {background: #606061;color: #FFFFFF;line-height: 25px;position: absolute;right: -12px;text-align: center;top: -10px;width: 24px;text-decoration: none;-webkit-border-radius: 12px;-moz-box-shadow: 1px 1px 3px #000;}\n\
- .closeconfPopup:hover {background: #00d9ff;}\n\
-</style></head>\n");
+*{margin:0; padding:0;}\n\
+body, html{height:100%;}\n\
+body {\n\
+ color: white;font-size:150%;background-color:green;font-family: Arial,Helvetica,Sans-Serif;\n\
+ background-image:url(https://static.mycity.travel/manage/uploads/7/36/12705/989bd67a1aad43055bd0322e9694f8dd8fab2b43_1080.jpg);/*background-repeat:no-repeat;*/\n\
+}\n\
+#main {max-width:1280px;min-height:100%;margin:0 auto;position:relative;}\n\
+footer {text-align:right;position:absolute;bottom:0;width:100%;padding-top:35px;height:35px;}\n\
+.table {width:100%;min-width:700px;padding-right:100%;height:50px;border-spacing: 0px;}\n\
+.modal {display: none;position: fixed;z-index: 1;left: 0%;top: 0%;height: 100%;width: 100%;overflow: scroll;background-color: #000000;}\n\
+.modal-content {background-color: #fff7e6;color: #000088;margin: 5% auto;padding: 15px;border: 2px solid #888;height: 90%;width: 90%;min-height: 755px;}\n\
+.close {color: #aaa;float: right;font-size: 30px;font-weight: bold;}\n\
+.safe {border: none;height: 48px;width: 48px;cursor: pointer;background-repeat: no-repeat;background: transparent;background-position: center;vertical-align: center;background-image:url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADAAAAAwCAYAAABXAvmHAAAABmJLR0QA/wD/AP+gvaeTAAAErklEQVRoge2ZTUgcZxjH/8/MrAeJtFhXsn600hLd3VgLXbUUUtCQi8XFrGZNW1vooaQVDfReClsovZe6NubQk4eoUVd2TSmE4LEYhRYbbYT0kFiVbpQGF0V3Z54eojHdeXdnZmf0Ev+3fd6P+f3nfXbeL+BEJ3qxRU50Eh4NyztKppklrVViCmiAlwAPAacAgIEUmFaJ+L5GPC+p8p3AQsNsJBLR7D7bloGOWEe1pkl9DHwM4kqLzVdAPKyqcvTnromVQhkKMtA2GnYrrvS3DHwKoKjQh+9rD8Q/kax9HQ/GH1ttbNlAMNbxETP9AKDUalsDbTBT/3Tn5A0rjUwbCAxdcXncyUEQf2adzbyYaWg96b46//n1tJn6pgwE48Fizsg3AbTZojOvW6So4Xgwvm1UUTKqEBi64jpmeAB4nzPyVHg0bPj/MjTgcScHcbzwB7qwU7T3vVGlvCnUPhHqAfGwc0wFiPiDxMWpkZzFuQpCE6FX0sR/Aig7EjDz2iRFrcv1ic2ZQhni73CM8GUlxbmKSrWM/E2uQuEItI13VsmS9gD2JylTqj1diu7mevz6YAW37/0lqrJHinomHow/zC4QjoBC3I9jhlckCefOvIoLZ18XVStiVeoVFegMRCIRiYl7nAYVyedx43Lzm1CkQ4x336iGW5ROmvRJeDQsZ4d1BuYafn8HQJWzqHrVni5FV5MPsnSYxarGuHl3EcktwfxFXLnjSgeywzoDLGmtDrPq5K8o0735A/iltWTOdsR0PjumM0Ca1OgUqEj+ijJ0NZ4Vvvl88ADAgPEIAKi1TZlDduABgIjrsmN6A8Qes0B5vt06+TxuW/AAwICOTTQCp8x01uKtQW9rE3wet2Fdf0UZLjX5bcHvqyQ7YLiYE6nFW4MWbw1kiXCpyZ/XhN20MZLIQCpfA3dJMd6rfe3Z73wmjgB+KzugN8C0lq+H5NY2RmYXkNEODxRkidDd7Ed9VflRwoMAHZtoBJaNOlpe38To7B//M0FE6Ar4UF9VfmRpw0z3s2OiiWzOTGfL65sYv7sEVeNnMSJC6G2fEH587p7tnBex6QxIqnzHbIdLa0lhOone/OKq5RMTnURsOgOBhYZZAI/MdipKpwM5+bUB8DCw0DCfHdSt7mZmZrj2w7pygM6Z7XkjtYP1J1vwVbgh0dO37zA8AAxe7712OzsonAdUVY4C2LPS+/MjcQTwu1AyUVFBzj1xe6zjRzB9YfVJ/oqnu1Ancv45DSRCsauigpwzcXqv6CsAlikWVx87Db9BippzT5zTwC/dY5vMJHR9nGKm3nyHvnnXQtOdkzeYach5LJMijk53To7lq2K4mCvOKH0AYo5BmRQRT6deevKlUT1DA2PdYyopag+AW46QmVMCstY90zqTMapoajkdD8a31/4pvwjia/bZDEQcTb38b8jMyTRQwAVHe6zjMpgG4PypXZKZ+oxyPluWNzSJi1MjLiYvA4MAdq22F2gXwEA67fJahQdsXvK1x9srocr9YOoBUG2x+SMAw1Ay0UQw8XehDI5cs0YiEWnurd8aiek8AwEirmOgEof76xSYVgAss6TN7V+zzjtxzXqiE73o+g+dpfqwtFDpgQAAAABJRU5ErkJggg==');}\n\
+.warning {border: none;height: 48px;width: 48px;title:'Warning: probable water leak!';cursor: pointer;background-repeat: no-repeat;background: transparent;background-position: center;vertical-align: center;background-image:url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADAAAAAwCAYAAABXAvmHAAAABmJLR0QA/wD/AP+gvaeTAAAChUlEQVRoge2YT2sTQRjGf9Nmd6NFIlHx4EUQPbR48AOIVtFDUD9Bj6LFPwj2JngRBMFiBC9+Bc+CJ8GmQu9SAoIEL7UgDShEoWnavF7aZLvN7szszlbB/Z2WzOy8z5tn5mESKCgoKCj4n1F5LSwLwRUUrwHoq9tqev19HnVyaUCWqNIrfwGpbn/0k75/Wk132q5rjbleEIBe8DQkHuAw4xtP8ijl3AFZ9CcR9QkoRYa2QM6pCxvLLuu5d0BUnb3iAcZBvXRdzmkD0ghuAFcTplySheC6y5rOtpA08WkHy8AZTcUWv7pTqkbXRV13DrSD++jEAwinOBjcdVXWiQMjYlOHs1h148De2NThLFYzOxAXmw/mp/jR8QA4UulRf9iMvuokVrM7EBObXqk/ePa9fnQYHMVqpgaSYtP3ZPAcbiZC5lhN3YA08YHncePhbz3czAgFdXlHkFZHegc0semVhqL9eAcyx2qqBmSJKqhHSXN2O5DQAIDisXw4dDSNlnQOGMRmWLSnayBDrFo3IIv+JHBTNy+8bfxSwhkYLMwtafhnbfXYOxB/29yF8RkYkipWrRowuG0OsDoDQ6xj1bgBXWxGsTwDYUVWsWrugOltc5uwaM/kDOxgGatGd6EUt82sGN9WzRywv21mxThWtQ4k/EhP5Ntambcfj6OAa+e/c+LYus3rYHhb1YsyjM0or96cZHWtDMDX1QM8u/fZdomdWL2cNClxC9nEZpTOb2/ksyXaWI1twDY2o8zUVqhMbFKZ2GSmtpJ2GW2sxp4BaQRzwHz6yg4R5tTF7otRQ0lb6E5OcuwZi9eSz3+j+0h8A8IsitY+ahmNosWWmv3bMgoKCgoK/k3+AILkzValVvu5AAAAAElFTkSuQmCC');}\n\
+.blink {animation: blink 2s steps(5, start) infinite; -webkit-animation: blink 1s steps(5, start) infinite;}\n\
+@keyframes blink {to {visibility: hidden;}}\n\
+@-webkit-keyframes blink {to {visibility: hidden;}}\n\
+.confPopup {position: relative;opacity: 0;display: none;-webkit-transition: opacity 400ms ease-in;-moz-transition: opacity 400ms ease-in;transition: opacity 400ms ease-in;}\n\
+.confPopup:target{opacity: 1;display: block;}\n\
+.confPopup > div {width: 750px;position: fixed;top: 25px;left: 25px;margin: 10% auto;padding: 5px 20px 13px 20px;border-radius: 10px;background: #71a6fc;background: -moz-linear-gradient(#71a6fc, #fff);background: -webkit-linear-gradient(#71a6fc, #999);}\n\
+.closeconfPopup {background: #606061;color: #FFFFFF;line-height: 25px;position: absolute;right: -12px;text-align: center;top: -10px;width: 24px;text-decoration: none;-webkit-border-radius: 12px;-moz-box-shadow: 1px 1px 3px #000;}\n\
+.closeconfPopup:hover{background: #00d9ff;}\n\
+</style>\n</head>\n");
   }if(blankPage){
     WEB_F("<body>\n");
   }else{
-    WEB_F("<body onload='init();'><div id='main'>\n\
-<div id='about' class='modal'><div class='modal-content'><span class='close' onClick='refresh();'>&times;</span><h2>About:</h2>\
-This WiFi Water Meter is a connected device that allows to control (from a home automation application like Domoticz or Jeedom) the \
+    WEB_F("<body onload='init();'><div id='main'>\n");
+    if(authorizedIP()){
+      WEB_F("<div id='about' class='modal'><div class='modal-content'><span class='close' onClick='refresh();'>&times;</span><h2>About:</h2>\
+This WiFi Water Meter is a connected device that allows you to control (from a home automation application like Domoticz or Jeedom) the \
 water consumption of a distribution network located after a water meter with a reed sensor.<br><br>\
 This device has its own WEB interface which can be used to configure and control it from a web browser (its firmware can also be upgraded from this page). \
 Through the MQTT protocol, the device periodically transmits its data to the data formatting server and send notifications in the event of network leak.<br><br>\
 As long as no SSID is set and it is not connected to a master, the device acts as an access point with its own SSID and default password: \"");
-    WEB_S(String(DEFAULTHOSTNAME)); WEB_F("-xxx/");
+      WEB_S(String(DEFAULTHOSTNAME)); WEB_F("-xxx/");
 #ifdef DEFAULTWIFIPASS
-    WEB_S(String(DEFAULTWIFIPASS).length() ?F(DEFAULTWIFIPASS) :F("none"));
+      WEB_S(String(DEFAULTWIFIPASS).length() ?F(DEFAULTWIFIPASS) :F("none"));
 #else
-    WEB_F("none");
+      WEB_F("none");
 #endif
-    WEB_F("\" on: 192.168.4.1.<br><br>\n<table style='width: 100%'>\n\
+      WEB_F("\" on: 192.168.4.1.<br><br>\n<table style='width: 100%'>\n\
 <th style='text-align:left;'><h3>Network name:</h3></th>\n<th style='text-align:left;'><h3>NTP server - TimeZone:</h3></th>\n<th style='text-align:left;'><h3>Reboot device:</h3></th>\n\
 <tr style='white-space: nowrap;'><td style='text-align:left;'>\n<form method='POST'>\n");
-    sendHTML_inputText(F("hostname"), hostname, "style='width:150px'");
-    sendHTML_button("", F("Submit"), F("onclick='submit();'"));
-    WEB_F("</form>\n</td><td style='text-align: left;'>\n<form method='POST'>");
-    sendHTML_inputText(F("ntpServer"), ntpServer, "style='width:200px'");
-    sendHTML_inputNumber(F("localTimeZone"), String(localTimeZone, DEC), "min=-11 max=11 size=2 style='width:60px'");
-    sendHTML_button("", F("Submit"), F("onclick='submit();'"));
-    WEB_F("</form>\n</td><td style='text-align: center;'>\n<form method='POST'>");
-    sendHTML_button(F("restart"), F("Save Data"), F("onclick='submit();'")); sendHTML_checkbox("reboot", true, "style='display:none;'");
-    WEB_F("</form>\n</td></tr></table>\n<br><h3>Network connection [");
-    WEB_S(WiFi.macAddress());
-    WEB_F("]:</h3><table><tr>");
-    for(ushort i(0); i<SSIDCount(); i++){
-      WEB_F("<td>\n<form method='POST'><table>\n<tr><td>SSID ");
-      WEB_S(String(i+1, DEC));
-      WEB_F(":</td></tr>\n<tr><td><input type='text' name='SSID' value='");
-      WEB_S(ssid[i] + (ssid[i].length() ?F("' readonly><br>\n"): F("'></td></tr>\n")));
-      WEB_F("<tr><td>Password:</td></tr>\n<tr><td><input type='password' name='password' value='");
-      if(password[i].length()) WEB_S(password[i]);
-      WEB_F("'></td></tr>\n<tr><td>Confirm password:</td></tr>\n<tr><td><input type='password' name='confirm' value='");
-      if(password[i].length()) WEB_S(password[i]);
-      WEB_F("'></td></tr>\n<tr><td><input type='button' value='Submit' onclick='saveSSID(this);'>&nbsp;<input type='button' value='Remove' onclick='deleteSSID(this);'></td></tr>\n</table></form>\n</td>\n");
-    }WEB_F("</tr></table>\n\
-<h6><a href='update' onclick='javascript:event.target.port=80'>Firmware update</a> - <a href='https://github.com/peychart/wifi-WaterMeter'>Website here</a></h6>\n\
+      sendHTML_inputText(F("hostname"), hostname, "style='width:150px'");
+      sendHTML_button("", F("Submit"), F("onclick='submit();'"));
+      WEB_F("</form>\n</td><td style='text-align: left;'>\n<form method='POST'>");
+      sendHTML_inputText(F("ntpServer"), ntpServer, "style='width:200px'");
+      sendHTML_inputNumber(F("localTimeZone"), String(localTimeZone, DEC), "min=-11 max=11 size=2 style='width:60px'");
+      sendHTML_button("", F("Submit"), F("onclick='submit();'"));
+      WEB_F("</form>\n</td><td style='text-align: center;'>\n<form method='POST'>");
+      sendHTML_button(F("restart"), F("Save Data"), F("onclick='submit();'")); sendHTML_checkbox("reboot", true, "style='display:none;'");
+      WEB_F("</form>\n</td></tr></table>\n<br><h3>Network connection [");
+      WEB_S(WiFi.macAddress());
+      WEB_F("]:</h3><table><tr>");
+      for(ushort i(0); i<SSIDCount(); i++){
+        WEB_F("<td>\n<form method='POST'><table>\n<tr><td>SSID ");
+        WEB_S(String(i+1, DEC));
+        WEB_F(":</td></tr>\n<tr><td><input type='text' name='SSID' value='");
+        WEB_S(ssid[i] + (ssid[i].length() ?F("' readonly><br>\n"): F("'></td></tr>\n")));
+        WEB_F("<tr><td>Password:</td></tr>\n<tr><td><input type='password' name='password' value='");
+        if(password[i].length()) WEB_S(password[i]);
+        WEB_F("'></td></tr>\n<tr><td>Confirm password:</td></tr>\n<tr><td><input type='password' name='confirm' value='");
+        if(password[i].length()) WEB_S(password[i]);
+        WEB_F("'></td></tr>\n<tr><td><input type='button' value='Submit' onclick='saveSSID(this);'>&nbsp;<input type='button' value='Remove' onclick='deleteSSID(this);'></td></tr>\n</table></form>\n</td>\n");
+      }WEB_F("</tr></table>\n\
+<h6><a href='update' onclick='javascript:event.target.port=80'>Firmware update</a> - <a href='https://github.com/peychart/WiFiWaterMeter'>Website here</a></h6>\n\
 </div></div>\n");
-//                             -----------------------------------------------------------------
-    WEB_F("<header>\n\
- <div style='text-align:right;white-space: nowrap;'><p><span class='close' onclick='showHelp();'>?&nbsp;</span></p></div>\n\
- </header>\n\
+//                             --------------------------------MAIN-------------------------------
+    }WEB_F("<header>\n\
+ <div style='text-align:right;white-space: nowrap;'><p><span class='close' onclick='showHelp();'>?&nbsp;</span></p></div>\n</header>\n\
 \n\
-<!MAIN SECTION>\n\
-<section>");
-
-    WEB_F("<table id='main' style='width: 100%'><col width='175px'><col width='260px'><tr>\n<td>\n<h3>");
+    <!HOME SECTION><section>\n<table id='counter' style='width: 100%'><col width='175px'><col width='260px'><tr>\n<td>\n<h3>");
     WEB_S(counterName); WEB_F(": </h3>\n\
 </td><td>\n<form id='0'>\n\
-	<canvas id='canvasOdometer' width='100' height='40' onclick='initConfPopup(this);'></canvas>\n\
+<canvas id='canvasOdometer' width='100' height='40'");
+    if(authorizedIP())
+      WEB_F(" onclick='initConfPopup(this);'");
+    WEB_F("></canvas>\n\
 </form></td><td>\n<form id='1'>\n\
-  <button id='leakStatusOk' name='status' class='safe' title='' onclick='initConfPopup(this);' style='display:");
-    WEB_S(leakStatus ?"none" :"inline-block");
-    WEB_F(";'>\n<button id='leakStatusFail' name='status' class='warning blink' title='Warning: probable water leak!' onclick='initConfPopup(this);' style='display:");
-    WEB_S(leakStatus ?"inline-block" :"none");
-    WEB_F(";'></button>\n</form></td></tr></table>\n");
+<button id='leakStatusOk' name='status' class='safe' title='No leak detected.' style='display:");
+    WEB_S(leakStatus ?"none;'" :"inline-block;'");
+    if(authorizedIP())
+      WEB_F(" onclick='initConfPopup(this);'");
+    else WEB_F(" disabled");
+    WEB_F("></button>\n\
+<button id='leakStatusFail' name='status' class='warning blink' title='Warning: probable water leak!' style='display:");
+    WEB_S(leakStatus ?"inline-block;'" :"none;'");
+    if(authorizedIP())
+      WEB_F(" onclick='initConfPopup(this);'");
+    else WEB_F(" disabled");
+    WEB_F("></button>\n</form></td>\n</tr></table>\n");
 
+    if(authorizedIP()){
     //MQTT Parameters:
-    WEB_F("\n<!Parameters:>\n<div style='display: none;'>\n");
-    for(ushort i(0); i<2; i++){   //Only one sensor, here... :-(
-      sendHTML_checkbox ("mqttEnable"      +String(i, DEC),                    mqttEnable[i]);
-      for(ushort j(0); j<mqttEnable[i]; j++){
-        sendHTML_inputText ("mqttFieldName"+String(i, DEC)+"."+String(j, DEC), mqttFieldName[i][j]);
-        sendHTML_inputText ("mqttNature"   +String(i, DEC)+"."+String(j, DEC), String(mqttNature[i][j], DEC));
-        sendHTML_inputText ("mqttType"     +String(i, DEC)+"."+String(j, DEC), String(mqttType[i][j], DEC));
-        sendHTML_inputText ("mqttValue"    +String(i, DEC)+"."+String(j, DEC), mqttValue[i][j]);
-    } }
-    WEB_F("</div>\n");
+      WEB_F("\n<!Parameters:>\n<div style='display: none;'>\n");
+      for(ushort i(0); i<2; i++){   //Only one sensor, here... :-(
+        sendHTML_checkbox ("mqttEnable"      +String(i, DEC),                    mqttEnable[i]);
+        for(ushort j(0); j<mqttEnable[i]; j++){
+          sendHTML_inputText ("mqttFieldName"+String(i, DEC)+"."+String(j, DEC), mqttFieldName[i][j]);
+          sendHTML_inputText ("mqttNature"   +String(i, DEC)+"."+String(j, DEC), String(mqttNature[i][j], DEC));
+          sendHTML_inputText ("mqttType"     +String(i, DEC)+"."+String(j, DEC), String(mqttType[i][j], DEC));
+          sendHTML_inputText ("mqttValue"    +String(i, DEC)+"."+String(j, DEC), mqttValue[i][j]);
+      } }
+      WEB_F("</div>\n");
 
-    WEB_F("\n<!Configuration popup:>\n<div id='confPopup' class='confPopup' style='color:black;'><div>\n<form id='mqttConf' method='POST'>");
-    sendHTML_inputText(F("plugNum"), "", F("style='display:none;'"));
-    WEB_F("<a title='Save configuration' class='closeconfPopup' onclick='closeConfPopup();'>X</a>\n");
-    WEB_F("<div style='text-align:center;'><h2>Parameters setting</h2></div>\n\
+      WEB_F("\n<!Configuration popup:>\n<div id='confPopup' class='confPopup' style='color:black;'><div>\n<form id='mqttConf' method='POST'>");
+      sendHTML_inputText(F("plugNum"), "", F("style='display:none;'"));
+      WEB_F("<a title='Save configuration' class='closeconfPopup' onclick='closeConfPopup();'>X</a>\n");
+      WEB_F("<div style='text-align:center;'><h2>Parameters setting</h2></div>\n\
 <div id='groupName'><h3 title='notification settings' style='display:inline-block;'>Index:</h3><h3 title='notification settings' style='display:none;'>Leak monitoring:</h3></div>\n\
 <table style='width: 100%'>\n<col width=33%><col width=33%>\n\
 <th id='label1' style='text-align:center;'><div style='display:inline-block;'>Counter Name</div><div style='display:none;'>Notification period</div></th>\n\
 <th id='label2' style='text-align:center;'><div style='display:inline-block;'>Deciliter per pulse</div><div style='display:none;'>Maximum consumption time</div></th>\n\
 <th id='label3' style='text-align:center;'><div style='display:inline-block;'>Initial value</div><div style='display:none;'>Leak msg</div></th>\n\
 <tr><td id='param1' style='text-align:center;'><div style='display:inline-block;'>");
-    sendHTML_inputText(F("counterName"), counterName, F("style='width:120px;'"));
-    WEB_F("</div><div style='display:none;'>");
-    sendHTML_inputNumber(F("leakNotifPeriod"), String(leakNotifPeriod/3600000L, DEC), "min=" + String(MIN_LEAKNOTIF_PERIOD/3600000L, DEC) + " max=" + String(MAX_LEAKNOTIF_PERIOD/3600000L, DEC) + " style='width:50px;text-align:right;'");
-    WEB_F("h</div></td>\n<td id='param2' align=center><div style='display:inline-block;'>");
-    sendHTML_inputNumber(F("multiplier"), String(multiplier, DEC), F("min=1 max=100 style='width:50px;text-align:right;'"));
-    WEB_F("dl/pulse</div><div style='display:none;'>");
-    sendHTML_inputNumber(F("maxConsumTime"), String(maxConsumTime/60000L, DEC), "min=" + String(MIN_MAXCONSUM_TIME/60000L, DEC) + " max=" + String(MAX_MAXCONSUM_TIME/60000L, DEC) + " style='width:50px;text-align:right;'");
-    WEB_F("mn</div></td>\n<td id='param3' align=center><div style='display:inline-block;'>");
-    sendHTML_inputNumber(F("counterValue"), String(getCounter(), DEC), F("min=0 max=999999999 style='width:80px;text-align:right;'"));
-    WEB_F("liters</div><div style='display:none;'>");
-    sendHTML_inputText(F("leakMsg"), leakMsg, F("style='width:200px;'"));
-    WEB_F("</div></td></tr>\n</table>\n");
+      sendHTML_inputText(F("counterName"), counterName, F("style='width:120px;'"));
+      WEB_F("</div><div style='display:none;'>");
+      sendHTML_inputNumber(F("leakNotifPeriod"), String(leakNotifPeriod/3600000L, DEC), "min=" + String(MIN_LEAKNOTIF_PERIOD/3600000L, DEC) + " max=" + String(MAX_LEAKNOTIF_PERIOD/3600000L, DEC) + " style='width:50px;text-align:right;'");
+      WEB_F("h</div></td>\n<td id='param2' align=center><div style='display:inline-block;'>");
+      sendHTML_inputNumber(F("multiplier"), String(multiplier, DEC), F("min=1 max=100 style='width:50px;text-align:right;'"));
+      WEB_F("dl/pulse</div><div style='display:none;'>");
+      sendHTML_inputNumber(F("maxConsumTime"), String(maxConsumTime/60000L, DEC), "min=" + String(MIN_MAXCONSUM_TIME/60000L, DEC) + " max=" + String(MAX_MAXCONSUM_TIME/60000L, DEC) + " style='width:50px;text-align:right;'");
+      WEB_F("mn</div></td>\n<td id='param3' align=center><div style='display:inline-block;'>");
+      sendHTML_inputNumber(F("counterValue"), String(getCounter(), DEC), F("min=0 max=999999999 style='width:80px;text-align:right;'"));
+      WEB_F("liters</div><div style='display:none;'>");
+      sendHTML_inputText(F("leakMsg"), leakMsg, F("style='width:210px;'"));
+      WEB_F("</div></td></tr>\n</table>\n");
 
-    WEB_F("<br><h3 title='Server settings'>MQTT parameters \n");
-    //MQTT configuration:
-    sendHTML_checkbox(F("mqttEnable"), false, "style='vertical-align:right;' onclick='refreshConfPopup();'");
-    WEB_F("</h3>\n<div id='mqttParams'><p align=center title='Server settings'>Broker: ");
-    sendHTML_inputText(F("mqttBroker"), mqttBroker, F("style='width:65%;'"));
-    WEB_S(":");
-    sendHTML_inputNumber(F("mqttPort"), String(mqttPort,DEC), F("min='0' max='-1' style='width:10%;'"));
-    WEB_F("</p>\n<table style='width: 100%'>\n<col width='42%'><col width='30%'><tr title='Server settings' style='white-space: nowrap;'><td>\nIdentification: ");
-    sendHTML_inputText(F("mqttIdent"), mqttIdent, F("style='width:120px;'"));
-    WEB_F("</td><td>\nUser: ");
-    sendHTML_inputText(F("mqttUser"), mqttUser, F("style='width:120px;'"));
-    WEB_F("</td><td>\nPassword: ");
-    sendHTML_inputPwd(F("mqttPwd"), mqttPwd, F("style='width:75px;'"));
-    WEB_F("</td></tr></table>\n<p align=center title='Server settings'>Topic: ");
-    sendHTML_inputText(F("mqttTopic"), mqttQueue, F("style='width:80%;'"));
-    WEB_F("</p><br>\n<table id='mqttRaws' title='notification settings' border='1' cellpadding='10' cellspacing='1' style='width: 100%'>\n\
+      WEB_F("<br><h3 title='Server settings'>MQTT parameters \n");
+      //MQTT configuration:
+      sendHTML_checkbox(F("mqttEnable"), false, "style='vertical-align:right;' onclick='refreshConfPopup();'");
+      WEB_F("</h3>\n<div id='mqttParams'><p align=center title='Server settings'>Broker: ");
+      sendHTML_inputText(F("mqttBroker"), mqttBroker, F("style='width:65%;'"));
+      WEB_S(":");
+      sendHTML_inputNumber(F("mqttPort"), String(mqttPort,DEC), F("min='0' max='-1' style='width:10%;'"));
+      WEB_F("</p>\n<table style='width: 100%'>\n<col width='42%'><col width='30%'><tr title='Server settings' style='white-space: nowrap;'><td>\nIdentification: ");
+      sendHTML_inputText(F("mqttIdent"), mqttIdent, F("style='width:120px;'"));
+      WEB_F("</td><td>\nUser: ");
+      sendHTML_inputText(F("mqttUser"), mqttUser, F("style='width:120px;'"));
+      WEB_F("</td><td>\nPassword: ");
+      sendHTML_inputPwd(F("mqttPwd"), mqttPwd, F("style='width:75px;'"));
+      WEB_F("</td></tr></table>\n<p align=center title='Server settings'>Topic: ");
+      sendHTML_inputText(F("mqttTopic"), mqttQueue, F("style='width:80%;'"));
+      WEB_F("</p><br>\n<table id='mqttRaws' title='notification settings' border='1' cellpadding='10' cellspacing='1' style='width: 100%'>\n\
 <col width='25%'><col width='25%'><col width='20%'><col width='25%'>\n\
 <tr>\n<th>FieldName</th><th>Nature</th><th>Type</th><th>Value</th><th>");
-    sendHTML_button("mqttPlus", "+", "title='Add a field name' style='background-color: rgba(0, 0, 0, 0);' onclick='mqttAddRaw();'");
-    WEB_F("</th></tr>\n</table>\n</div></form></div></div>\n");
-
+      sendHTML_button("mqttPlus", "+", "title='Add a field name' style='background-color: rgba(0, 0, 0, 0);' onclick='mqttAddRaw();'");
+      WEB_F("</th></tr>\n</table>\n</div></form></div></div>\n");
+    }
     WEB_F("</section>\n\n<footer>\n<h6>(<div id='date' style='display:inline-block;'></div>V");
     WEB_S(String(ResetConfig,DEC));
     WEB_F(", Uptime: ");
@@ -271,13 +288,13 @@ As long as no SSID is set and it is not connected to a master, the device acts a
     WEB_F(")</h6>\n\
 </footer>\n\
 \n\
-<!FRAME /dev/null><iframe name='blankFrame' height='0' width='0' frameborder='0'></iframe>\n\
+<!FRAME /dev/null><iframe name='blankFrame' height='0' width='0' frameborder='0'></iframe>\n\n\
 <script>\n\
 var odometer;\n\
 this.timer=0;\n\
 function init(){odometer=new steelseries.Odometer('canvasOdometer', {'decimals':3});refresh(1);}\n\
-function refresh(v=20){\n\
- clearTimeout(this.timer);document.getElementById('about').style.display='none';\n\
+function refresh(v=20){var e=document.getElementById('about');\n\
+ clearTimeout(this.timer);if(e)e.style.display='none';\n\
  if(v>0)this.timer=setTimeout(function(){RequestStatus();refresh();},v*1000);\n\
 }\n\
 function RequestStatus(){var ret,req=new XMLHttpRequest();\n\
@@ -288,7 +305,11 @@ function RequestStatus(){var ret,req=new XMLHttpRequest();\n\
   document.getElementById('date').innerHTML=s + '&nbsp;-&nbsp;';\n\
   odometer.setValue(parseFloat(ret.substring(ret.indexOf(',')+1,ret.indexOf(']'))));\n\
 }}\n\
-function showHelp(){refresh(120);document.getElementById('about').style.display='block';}\n\
+function showHelp(){");
+      if(!authorizedIP())
+        WEB_F("window.location.href='https://github.com/peychart/WiFiWaterMeter'}\n");
+      else{
+        WEB_F("refresh(120);document.getElementById('about').style.display='block';}\n\
 function saveSSID(e){var f,s;\n\
  for(f=e;f.tagName!='FORM';)f=f.parentNode;\n\
  if((s=f.querySelectorAll('input[type=text]')).length && s[0]==''){alert('Empty SSID...');f.reset();s.focus();}\n\
@@ -307,7 +328,7 @@ function deleteSSID(e){var f,s;\n\
    f.submit();\n\
  }}else alert('Empty SSID...');\n\
 }\n\
-//Main Form:\n\
+//MQTT Forms:\n\
 function setDisabled(v, b){for(var i=0;v[i];i++)v[i].disabled=b;}\n\
 function mqttAllRawsRemove(){var t,r;for(t=document.getElementById('mqttPlus');t.tagName!='TR';)t=t.parentNode;t=t.parentNode;\n\
  r=t.getElementsByTagName('TR');while(r[1])t.removeChild(r[1]);\n\
@@ -338,7 +359,7 @@ function mqttRawAdd(){var t;for(t=document.getElementById('mqttPlus');t.tagName!
  i.appendChild(j=document.createElement('option'));j.value='1';j.innerHTML='Number';\n\
  tr.appendChild(td=document.createElement('td'));td.style='text-align:center;';\n\
  td.appendChild(i=document.createElement('b'));i.innerHTML='\"';\n\
- td.appendChild(i=document.createElement('input'));i.id=i.name='mqttValue'+n;i.value='0';i.type='text';i.style='width:45%;text-align:center;';\n\
+ td.appendChild(i=document.createElement('input'));i.id=i.name='mqttValue'+n;i.value='0';i.type='text';i.style='width:60%;text-align:center;';\n\
  td.appendChild(i=document.createElement('b'));i.innerHTML='\"';\n\
  tr.appendChild(td=document.createElement('td'));td.style='text-align:center;';\n\
  td.appendChild(i=document.createElement('input'));i.id='mqttMinus'+n;i.type='button';i.value='-';i.style='background-color: rgba(0, 0, 0, 0);';i.setAttribute('onclick','mqttRawRemove(this);');\n\
@@ -398,12 +419,12 @@ function closeConfPopup(){\n\
  if(checkConfPopup()){\n\
   var f=document.getElementById('mqttConf');f.setAttribute('target','blankFrame');\n\
   setTimeout(function(){window.location.href='';}, 1000);f.submit();\n\
-}}\n\
-</script>\n\
+}}\n");
+    }WEB_F("</script>\n\
 <script src='https://cdn.rawgit.com/HanSolo/SteelSeries-Canvas/master/tween-min.js'></script>\n\
 <script src='https://cdn.rawgit.com/HanSolo/SteelSeries-Canvas/master/steelseries-min.js'></script>\n\
-"); }
-  WEB_F("</div></body>\n</html>\n\n");
+");
+  }WEB_F("</div></body>\n</html>\n\n");
   ESPWebServer.sendContent("");
   ESPWebServer.client().stop();
 }
@@ -442,7 +463,7 @@ void writeConfig(){                                     //Save current config:
     f.println(ntpServer);
     f.println(localTimeZone);
     f.println(dailyData.size());
-    for (std::map<ulong,ulong>::iterator it=dailyData.begin(); it!=dailyData.end(); it++){
+    for (std::map<ulong,ulong>::const_iterator it=dailyData.begin(); it!=dailyData.end(); it++){
       f.println(it->first);
       f.println(it->second);
     }//MQTT parameters:
@@ -748,7 +769,7 @@ bool mqttNotify(ushort n){
         s+="\n \"" + mqttFieldName[n][i] + "\": ";
         if(mqttType[n][i]==0) s+= "\"";   //type "String"
         if(mqttNature[n][i]==0)           //Counter-value or Warning-level
-              s+=(n ?String(leakStatus,DEC) :String(getIndex(),3));
+              s+=(n ?String(leakStatus,DEC) :getIndex());
         else if(!mqttNature[n][i]==1)
               s+=leakMsg;                     //Warning-message
         else  s+=mqttValue[n][i];         //Constant
@@ -766,30 +787,47 @@ bool mqttNotify(ushort n){
 }inline bool mqttNotifyIndex  (void){return(mqttNotify(1));}  //Warning on possible leaks
 inline  bool mqttNotifyWarning(void){return(mqttNotify(0));}  //Volume notification
 
-void getDataFile(){
+void getData(std::map<ulong,ulong>& d){
+  for(std::map<ulong,ulong>::const_iterator it=dailyData.begin(); it!=dailyData.end(); ){
+    ESPWebServer.sendContent("\n  [");
+    ESPWebServer.sendContent(String(it->first, DEC));
+    ESPWebServer.sendContent(",");
+    ESPWebServer.sendContent(getIndex(it->second));
+    ESPWebServer.sendContent("]");
+    if((++it)!=dailyData.end())
+      ESPWebServer.sendContent(",");
+} }
+
+void getData(String fileName){
   File f;
-  ESPWebServer.setContentLength(CONTENT_LENGTH_UNKNOWN);
-  ESPWebServer.send(200, "text/plain");
-  if(SPIFFS.begin() && (f=SPIFFS.open("dataStorage", "r"))){
-    ESPWebServer.sendContent(F("[\n"));
+DEBUG_print("Open: "); DEBUG_print(fileName); DEBUG_print("\n");
+  if(SPIFFS.begin() && (f=SPIFFS.open(fileName, "r"))){
     for(String s=readString(f); s.length(); ){
-      ESPWebServer.sendContent(" [");
+      ESPWebServer.sendContent("\n  [");
       ESPWebServer.sendContent(s.substring(0,s.indexOf(",")));
       ESPWebServer.sendContent(",");
-      ESPWebServer.sendContent(String(getIndex((ulong)atol(s.substring(s.indexOf(",")+1).c_str())*10UL),3));
+      ESPWebServer.sendContent(getIndex((ulong)atol(s.substring(s.indexOf(",")+1).c_str())*10UL));
       ESPWebServer.sendContent("]");
       if((s=readString(f)).length())
-        ESPWebServer.sendContent(",\n");
-      else
-        ESPWebServer.sendContent("\n]\n");
-  } }
-  else{
-    ESPWebServer.sendContent("Error: cannot access data...\n");
-    DEBUG_print("Cannot open SPIFFS data file!...\n");
-  }ESPWebServer.sendContent("");
-  ESPWebServer.client().stop();
-  if(f) f.close(); SPIFFS.end();
+        ESPWebServer.sendContent(",");
+    }f.close();
+  }SPIFFS.end();
 }
+
+void getData(bool current){
+  ESPWebServer.setContentLength(CONTENT_LENGTH_UNKNOWN);
+  ESPWebServer.send(200, "text/plain");
+  ESPWebServer.sendContent(F("{\n \"counterName\":\""));
+  ESPWebServer.sendContent(counterName);
+  ESPWebServer.sendContent(F("\",\n \"records\":["));
+  if(current)
+        getData(String("dataStorage"));
+  else  getData(dailyData);
+  ESPWebServer.sendContent("\n ]\n}\n");
+  ESPWebServer.sendContent("");
+  ESPWebServer.client().stop();
+}void getHistoric()      {getData(true);}
+void getCurrentRecords() {getData(false);}
 
 bool deleteSPIFFSDataFile(bool b){
   static bool  deleteDataFile=false;
@@ -836,6 +874,7 @@ void dataFileWrite(){
         f.print("\n");
         dailyData.erase(dailyData.begin());
       }f.close(); SPIFFS.end();
+      writeConfig();
       DEBUG_print("SPIFFS Data writed.\n");
     }else{
       DEBUG_print("Cannot open data file!...\n");
@@ -849,7 +888,8 @@ void pushData(){   // Every hours...
     if((sec-=currentHour(sec))<PUSHDATA_DELAY*2L){
       dailyData[currentHour(now())]=getCounter();
       DEBUG_print("Data pushed.\n");
-      mqttNotifyIndex();
+      if(isTimeSynchronized())
+        mqttNotifyIndex();
       dataFileWrite();
     }next_pushData = millis() + (isTimeSynchronized() ?((3600UL - sec)*1000UL) :(PUSHDATA_DELAY*1000UL));
   }deleteDataFile();
@@ -899,13 +939,14 @@ void setup(){
   // Servers:
   WiFi.softAPdisconnect(); WiFi.disconnect();
   //Definition des URLs d'entree /Input URL definitions
-  ESPWebServer.on("/",           [](){handleRoot();      ESPWebServer.client().stop();});
-  ESPWebServer.on("/restart",    [](){reboot();});
-  ESPWebServer.on("/historic",   [](){getDataFile();});
-  ESPWebServer.on("/clearData",  [](){deleteDataFile();});
-  ESPWebServer.on("/index",      [](){setIndex(); ESPWebServer.send(200, "text/plain", "[" + String(now(), DEC) + "," + String(getIndex(), 3) + "]");});
-//ESPWebServer.on("/about",      [](){ ESPWebServer.send(200, "text/plain", getHelp()); });
-  ESPWebServer.onNotFound(       [](){ESPWebServer.send(404, "text/plain", "404: Not found");});
+  ESPWebServer.on("/",              [](){handleRoot(); ESPWebServer.client().stop();});
+  ESPWebServer.on("/index",         [](){setIndex();   ESPWebServer.send(200, "text/plain", "[" + String(now(), DEC) + "," + getIndex() + "]");});
+  ESPWebServer.on("/historic",      [](){if(authorizedIP()){getHistoric();       }else ESPWebServer.send(403, "text/plain", "403: access denied");});
+  ESPWebServer.on("/currentRecords",[](){if(authorizedIP()){getCurrentRecords(); }else ESPWebServer.send(403, "text/plain", "403: access denied");});
+  ESPWebServer.on("/clearData",     [](){if(authorizedIP()){deleteDataFile();    }else ESPWebServer.send(403, "text/plain", "403: access denied");});
+  ESPWebServer.on("/restart",       [](){if(authorizedIP()){reboot();            }else ESPWebServer.send(403, "text/plain", "403: access denied");});
+//ESPWebServer.on("/about",         [](){ ESPWebServer.send(200, "text/plain", getHelp()); });
+  ESPWebServer.onNotFound(          [](){ESPWebServer.send(404, "text/plain", "404: Not found");});
 
   httpUpdater.setup(&ESPWebServer);  //Adds OnTheAir updates:
   ESPWebServer.begin();              //Demarrage du serveur web /Web server start
