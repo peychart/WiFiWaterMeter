@@ -19,6 +19,18 @@ C++ source
 
 * ![](doc/images/mqtt2.png)
 
+* Virtual sensor creat & edit:
+
+* ![](doc/images/domoticz/edit.png)
+
+* ![](doc/images/domoticz/devices.png)
+
+* ![](doc/images/domoticz/sensors.png)
+
+* ![](doc/images/domoticz/map.png)
+
+* ![](doc/images/domoticz/edit.png)
+
 Hardware:
 ---------
 
