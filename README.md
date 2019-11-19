@@ -29,7 +29,6 @@ C++ source
 
 * ![](doc/images/domoticz/map.png)
 
-* ![](doc/images/domoticz/edit.png)
 
 Hardware:
 ---------
