@@ -1,4 +1,4 @@
-Wifi Power Strip
+Wifi Water Meter
 ================
 
 
