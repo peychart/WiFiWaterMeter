@@ -27,6 +27,8 @@ C++ source
 
 * ![](doc/images/domoticz/sensors.png)
 
+* Map:
+
 * ![](doc/images/domoticz/map.png)
 
 
