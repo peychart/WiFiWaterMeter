@@ -17,7 +17,7 @@ C++ source
 * 3 configurable SSID,
 * web interface configuration,
 * definition of IPs (such as the reverse proxy) excluded from configuration changes; allows secure exposure of the home page to the Internet,
-* dedug trace available by telnet console,
+* debug trace available by telnet console,
 * firmware update via WiFi, without loss of data and setting,
 * accepts HTML commands from the home automation software: current counter value, log history recovery in JSON format, clear current history, backup of current measures with reboot, ...
 
