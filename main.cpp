@@ -132,8 +132,9 @@ void sendHTML(bool blankPage=false){
 body, html{height:100%;}\n\
 body {\n\
  color: white;font-size:150%;background-color:green;font-family: Arial,Helvetica,Sans-Serif;\n\
- background-image:url(https://static.mycity.travel/manage/uploads/7/36/12705/989bd67a1aad43055bd0322e9694f8dd8fab2b43_1080.jpg);/*background-repeat:no-repeat;*/\n\
-}\n\
+ background-image:url(");
+    WEB_S(BACKGROUND_IMAGE);
+    WEB_F(");/*background-repeat:no-repeat;*/\n}\n\
 #main {max-width:1280px;min-height:100%;margin:0 auto;position:relative;}\n\
 footer {text-align:right;position:absolute;bottom:0;width:100%;padding-top:35px;height:35px;}\n\
 .table {width:100%;min-width:700px;padding-right:100%;height:50px;border-spacing: 0px;}\n\
@@ -291,21 +292,26 @@ As long as no SSID is set and it is not connected to a master, the device acts a
 <script>\n\
 var odometer;\n\
 this.timer=0;\n\
-function init(){odometer=new steelseries.Odometer('canvasOdometer', {'decimals':3});refresh(1);}\n\
+function init(){try{odometer=new steelseries.Odometer('canvasOdometer', {'decimals':3});}catch(e){;};refresh(1);}\n\
 function refresh(v=20){var e=document.getElementById('about');\n\
  clearTimeout(this.timer);if(e)e.style.display='none';\n\
  if(v>0)this.timer=setTimeout(function(){RequestStatus();refresh();},v*1000);\n\
 }\n\
-function RequestStatus(){var ret,req=new XMLHttpRequest();\n\
+function RequestStatus(){var canvas,v,ret,req=new XMLHttpRequest();\n\
  req.open('GET',location.protocol+'//'+location.host+'/index',false);req.send(null);ret=req.responseText.trim();\n\
  if(ret.indexOf('[')>=0 && ret.indexOf(',')>=0 && ret.indexOf(']')>=0){\n\
   var s='No NTP sync', v=parseInt(ret.substring(ret.indexOf('[')+1,ret.indexOf(',')));\n\
   if(v>946684800){s=(new Date(v*1000)).toISOString();s=s.substring(0,s.indexOf('T')).split('-').join('/');}\n\
   document.getElementById('date').innerHTML=s + '&nbsp;-&nbsp;';\n\
-  odometer.setValue( parseFloat(ret.substring(ret.indexOf(',')+1,ret.indexOf(']')))/1000.0*");
+  canvas=document.getElementById('canvasOdometer');\n\
+  v=( parseFloat(ret.substring(ret.indexOf(',')+1,ret.indexOf(']')))/1000.0*");
       WEB_S(String(UNIT_DISPLAY*1.0, 1));
-      WEB_F(");\n\
-}}\n\
+      WEB_F(" );\n\
+  canvas.innerHTML=v+' m3';if(odometer!==undefined)odometer.setValue(v);else{\n\
+   var ctx=canvas.getContext('2d');\n\
+   canvas.width=300;ctx.font='35px Comic Sans MS';ctx.fillStyle='white';ctx.textAlign='center';\n\
+   ctx.fillText(v+' m3', canvas.width/3, canvas.height/1.5);\n\
+}}}\n\
 function showHelp(){");
       if(!authorizedIP())
         WEB_F("window.location.href='https://github.com/peychart/WiFiWaterMeter'}\n");
