@@ -50,7 +50,7 @@ C++ source
 Hardware:
 ---------
 
-* ESP8266 Mini WiFi Nodemcu Module with 18650 battery support:
+* ESP8266 Mini WiFi Nodemcu Module with 18650 battery support (autonomy of 17h on mains failure):
 
 * ![](doc/images/esp8266.jpg)
 
