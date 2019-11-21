@@ -1,5 +1,5 @@
-Wifi Water Meter
-================
+Wifi Water Meter Pulse Sensor
+=============================
 
 
 Software:
