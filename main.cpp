@@ -200,7 +200,7 @@ As long as no SSID is set and it is not connected to a master, the device acts a
     }WEB_F("<header>\n\
  <div style='text-align:right;white-space: nowrap;'><p><span class='close' onclick='showHelp();'>?&nbsp;</span></p></div>\n</header>\n\
 \n\
-    <!HOME SECTION><section>\n<table id='counter' style='width: 100%'><col width='175px'><col width='260px'><tr>\n<td>\n<h3>");
+<!HOME SECTION><section>\n<table id='counter' style='width: 100%'><col width='175px'><col width='260px'><tr>\n<td>\n<h3>");
     WEB_S(counterName); WEB_F(": </h3>\n\
 </td><td>\n<form id='0'>\n\
 <canvas id='canvasOdometer' width='100' height='40'");
@@ -314,7 +314,7 @@ function RequestStatus(){var canvas,v,ret,req=new XMLHttpRequest();\n\
 }}}\n\
 function showHelp(){");
       if(!authorizedIP())
-        WEB_F("window.location.href='https://github.com/peychart/WiFiWaterMeter'}\n");
+        WEB_F("window.location.href='https://github.com/peychart/WiFiWaterMeter';}\n");
       else{
         WEB_F("refresh(120);document.getElementById('about').style.display='block';}\n\
 function saveSSID(e){var f,s;\n\
@@ -919,13 +919,14 @@ void interruptTreatment(){
 void leakChecker(){
   if(isNow(next_leakCheck)){           // Minimal fixing time reached...
     if(leakStatus>0) leakStatus--;
+    mqttNotifyWarning();
     next_leakDetected=millis() + leakNotifPeriod;
     next_leakCheck=millis() + maxConsumTime;
   }else if(isNow(next_leakDetected)){  // ...in control period.
-    if(++leakStatus > LEAKDETECTLIMITE){
-      DEBUG_print("Leak notification!...\n");
-      mqttNotifyWarning();
-    }next_leakDetected=millis() + leakNotifPeriod;
+    if(leakStatus <= MAXLEAKDETECT) leakStatus++;
+    DEBUG_print("Leak notification!...\n");
+    mqttNotifyWarning();
+    next_leakDetected=millis() + leakNotifPeriod;
 } }
 
 // ***********************************************************************************************

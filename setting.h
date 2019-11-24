@@ -19,12 +19,12 @@ unsigned short ResetConfig =    1;                  //Change this value to reset
 #define UNIT_DISPLAY            10L                 // 1L ->unit=Liter, 1000L->unit=m3
 #define DELETEDATAFILE_DELAY    600000UL
 
-#define EXCLUDED_IPV4_FROM_TUNE 192,168,0,100       //Update requests from this (IP & MASK) (HAProxy server?) are prohibited...
+#define EXCLUDED_IPV4_FROM_TUNE 192,168,0,249       //Update requests from this (IP & MASK) (HAProxy server?) are prohibited...
 #define EXCLUDED_MASK_FROM_TUNE 255,255,255,255     //Mask to exclude prohibited IPs (warning: ',' not '.')
 
 //Default values (editable in the web interface):
 #define WATERLEAK_MESSAGE      "Warning: probable water leak!"
-#define LEAKDETECTLIMITE        3
+#define MAXLEAKDETECT           4
 
 #define DEFAULT_MQTT_SERVER    "mosquitto.home.lan"
 #define DEFAULT_MQTT_PORT       1883
@@ -35,4 +35,4 @@ unsigned short ResetConfig =    1;                  //Change this value to reset
 
 #define BACKGROUND_IMAGE       "https://static.mycity.travel/manage/uploads/7/36/12705/989bd67a1aad43055bd0322e9694f8dd8fab2b43_1080.jpg"
 
-#define DEBUG
+//#define DEBUG
