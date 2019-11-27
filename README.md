@@ -5,18 +5,18 @@ Wifi Water Meter Pulse Sensor
 Software:
 ---------
 
-C++ source
+C++ source, HTML, Javascript & JSON format.
 
-* MQTT transmissions data every hour,
-* adjustment (during compilation) of the unit of diffusion,
+* MQTT transmission of data every hour,
 * log history every hour in flash memory,
+* adjustment (setting.h) of the unit of diffusion,
 * retention of records on system time synchronization defect and re-indexing on synchronization recovery before historization,
 * monitoring of the consumption for detection of possible leaks in the water network,
 * configuration of the monitoring parameters via the Web interface,
 * MQTT alerts about possible leaks to the home automation device (Domotics, Jeedom, ...).
 * 3 configurable SSID,
 * web interface configuration,
-* definition of IPs (such as the reverse proxy) excluded from configuration changes; allows secure exposure of the home page to the Internet,
+* definition of IPs (such as the reverse proxy) excluded from configuration changes; allows secure exposure of the (only) home page to the Internet,
 * debug trace available by telnet console,
 * firmware update via WiFi, without loss of data and setting,
 * accepts HTML commands from the home automation software: current counter value, log history recovery in JSON format, clear current history, backup of current measures with reboot, ...
@@ -34,7 +34,7 @@ C++ source
 
 * ![](doc/images/mqtt2.png)
 
-* Virtual sensor creat & edit:
+* Virtual sensor creat & edit in Domoticz:
 
 * ![](doc/images/domoticz/edit.png)
 
@@ -50,7 +50,7 @@ C++ source
 Hardware:
 ---------
 
-* ESP8266 Mini WiFi Nodemcu Module with 18650 battery support (autonomy of about 17h in case of power failure):
+* ESP8266 Mini WiFi Nodemcu Module with 18650 battery support (autonomy of about 17h in case of power failure - when deepsleep option enabled):
 
 * ![](doc/images/esp8266.jpg)
 
