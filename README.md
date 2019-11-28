@@ -55,5 +55,5 @@ Hardware:
 
 * ![](doc/images/esp8266.jpg)
 
-* Warning : When Hibernation is enabled (soldered strap), GPIO 16 and Rst are connected, so flashing through the serial port is no longer possible. So, we have to unsolder the strap or proceed by OTA (flashing WiFi).
+* Warning : When Hibernation is enabled (soldered strap), GPIO 16 and Rst are connected and flashing through the serial port is no longer possible. So, we have to unsolder the strap or proceed by OTA (flashing WiFi).
 
