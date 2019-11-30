@@ -27,7 +27,7 @@ C++ source, HTML, Javascript & JSON format.
 
 * ![](doc/images/screenshot.png)
 
-* ![](doc/images/about.png)
+* ![](doc/images/about.jpg)
 
 * MQTT parameters:
 
