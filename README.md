@@ -20,7 +20,7 @@ C++ source, HTML, Javascript & JSON format.
 * debug trace available by telnet console,
 * firmware update via WiFi, without loss of data and setting,
 * accepts HTML commands from the home automation software: current counter value, log history recovery in JSON format, clear current history, backup of current measures with reboot, ...
-* Deepsleep option allowed between measures (comming soon)...
+* modem sleep option allowed between measures...
 
 
 * Screenshots:
@@ -51,9 +51,7 @@ C++ source, HTML, Javascript & JSON format.
 Hardware:
 ---------
 
-* ESP8266 Mini WiFi Nodemcu Module with 18650 battery support (autonomy of about 17h in case of power failure - when deepsleep option enabled):
+* ESP8266 Mini WiFi Nodemcu Module with 18650 battery support (autonomy more than 10h in case of power failure):
 
 * ![](doc/images/esp8266.jpg)
-
-* Warning : When deepsleep is enabled (soldered strap), GPIO 16 and RST are connected and flashing through the serial port is no longer possible. So, we have to unsolder the strap or proceed by OTA (flashing via the WiFi).
 
