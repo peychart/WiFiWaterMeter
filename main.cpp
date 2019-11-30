@@ -24,10 +24,10 @@
 String                                hostname(DEFAULTHOSTNAME);    //Can be change by interface
 String                                ssid[SSIDCount()];            //Identifiants WiFi /Wifi idents
 String                                password[SSIDCount()];        //Mots de passe WiFi /Wifi passwords
-String                                counterName(DEFAULTHOSTNAME), leakMsg(WATERLEAK_MESSAGE), ntpServer(NTPSERVER);
-short                                 localTimeZone(TIMEZONE);
+String                                counterName(DEFAULTHOSTNAME), leakMsg(WATERLEAK_MESSAGE), ntpServer(DEFAULTNTPSERVER);
+short                                 localTimeZone(DEFAULTTIMEZONE);
 ulong                                 counterValue(0UL), multiplier(MULTIPLIER);
-bool                                  WiFiAP(false);
+bool                                  WiFiAP(false), daylight(DEFAULTDAYLIGHT), lightSleepAllowed(false);
 #ifdef DEFAULTWIFIPASS
   ushort                              nbWifiAttempts(MAXWIFIRETRY), WifiAPTimeout;
 #endif
@@ -38,7 +38,8 @@ bool                                  WiFiAP(false);
 #define PUSHDATA_DELAY                120UL
 ulong                                 next_reconnect(0UL),
                                       next_leakCheck(0UL), next_leakDetected(MIN_LEAKNOTIF_PERIOD),
-                                      leakNotifPeriod(MIN_LEAKNOTIF_PERIOD), maxConsumTime(MIN_MAXCONSUM_TIME);
+                                      leakNotifPeriod(MIN_LEAKNOTIF_PERIOD), maxConsumTime(MIN_MAXCONSUM_TIME),
+                                      awakeTime(max(AWAKETIME, 600UL)*1000UL), next_lightSleep(0L);
 ushort                                leakStatus(0);
 volatile bool                         intr(false);
 std::map<ulong,ulong>                 dailyData;
@@ -137,20 +138,20 @@ body {\n\
     WEB_F(");/*background-repeat:no-repeat;*/\n}\n\
 #main {max-width:1280px;min-height:100%;margin:0 auto;position:relative;}\n\
 footer {text-align:right;position:absolute;bottom:0;width:100%;padding-top:35px;height:35px;}\n\
-.table {width:100%;min-width:700px;padding-right:100%;height:50px;border-spacing: 0px;}\n\
-.modal {display: none;position: fixed;z-index: 1;left: 0%;top: 0%;height: 100%;width: 100%;overflow: scroll;background-color: #000000;}\n\
-.modal-content {background-color: #fff7e6;color: #000088;margin: 5% auto;padding: 15px;border: 2px solid #888;height: 90%;width: 90%;min-height: 755px;}\n\
-.close {color: #aaa;float: right;font-size: 30px;font-weight: bold;}\n\
-.safe {border: none;height: 48px;width: 48px;cursor: pointer;background-repeat: no-repeat;background: transparent;background-position: center;vertical-align: center;background-image:url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADAAAAAwCAYAAABXAvmHAAAABmJLR0QA/wD/AP+gvaeTAAAErklEQVRoge2ZTUgcZxjH/8/MrAeJtFhXsn600hLd3VgLXbUUUtCQi8XFrGZNW1vooaQVDfReClsovZe6NubQk4eoUVd2TSmE4LEYhRYbbYT0kFiVbpQGF0V3Z54eojHdeXdnZmf0Ev+3fd6P+f3nfXbeL+BEJ3qxRU50Eh4NyztKppklrVViCmiAlwAPAacAgIEUmFaJ+L5GPC+p8p3AQsNsJBLR7D7bloGOWEe1pkl9DHwM4kqLzVdAPKyqcvTnromVQhkKMtA2GnYrrvS3DHwKoKjQh+9rD8Q/kax9HQ/GH1ttbNlAMNbxETP9AKDUalsDbTBT/3Tn5A0rjUwbCAxdcXncyUEQf2adzbyYaWg96b46//n1tJn6pgwE48Fizsg3AbTZojOvW6So4Xgwvm1UUTKqEBi64jpmeAB4nzPyVHg0bPj/MjTgcScHcbzwB7qwU7T3vVGlvCnUPhHqAfGwc0wFiPiDxMWpkZzFuQpCE6FX0sR/Aig7EjDz2iRFrcv1ic2ZQhni73CM8GUlxbmKSrWM/E2uQuEItI13VsmS9gD2JylTqj1diu7mevz6YAW37/0lqrJHinomHow/zC4QjoBC3I9jhlckCefOvIoLZ18XVStiVeoVFegMRCIRiYl7nAYVyedx43Lzm1CkQ4x336iGW5ROmvRJeDQsZ4d1BuYafn8HQJWzqHrVni5FV5MPsnSYxarGuHl3EcktwfxFXLnjSgeywzoDLGmtDrPq5K8o0735A/iltWTOdsR0PjumM0Ca1OgUqEj+ijJ0NZ4Vvvl88ADAgPEIAKi1TZlDduABgIjrsmN6A8Qes0B5vt06+TxuW/AAwICOTTQCp8x01uKtQW9rE3wet2Fdf0UZLjX5bcHvqyQ7YLiYE6nFW4MWbw1kiXCpyZ/XhN20MZLIQCpfA3dJMd6rfe3Z73wmjgB+KzugN8C0lq+H5NY2RmYXkNEODxRkidDd7Ed9VflRwoMAHZtoBJaNOlpe38To7B//M0FE6Ar4UF9VfmRpw0z3s2OiiWzOTGfL65sYv7sEVeNnMSJC6G2fEH587p7tnBex6QxIqnzHbIdLa0lhOone/OKq5RMTnURsOgOBhYZZAI/MdipKpwM5+bUB8DCw0DCfHdSt7mZmZrj2w7pygM6Z7XkjtYP1J1vwVbgh0dO37zA8AAxe7712OzsonAdUVY4C2LPS+/MjcQTwu1AyUVFBzj1xe6zjRzB9YfVJ/oqnu1Ancv45DSRCsauigpwzcXqv6CsAlikWVx87Db9BippzT5zTwC/dY5vMJHR9nGKm3nyHvnnXQtOdkzeYach5LJMijk53To7lq2K4mCvOKH0AYo5BmRQRT6deevKlUT1DA2PdYyopag+AW46QmVMCstY90zqTMapoajkdD8a31/4pvwjia/bZDEQcTb38b8jMyTRQwAVHe6zjMpgG4PypXZKZ+oxyPluWNzSJi1MjLiYvA4MAdq22F2gXwEA67fJahQdsXvK1x9srocr9YOoBUG2x+SMAw1Ay0UQw8XehDI5cs0YiEWnurd8aiek8AwEirmOgEof76xSYVgAss6TN7V+zzjtxzXqiE73o+g+dpfqwtFDpgQAAAABJRU5ErkJggg==');}\n\
-.warning {border: none;height: 48px;width: 48px;title:'Warning: probable water leak!';cursor: pointer;background-repeat: no-repeat;background: transparent;background-position: center;vertical-align: center;background-image:url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADAAAAAwCAYAAABXAvmHAAAABmJLR0QA/wD/AP+gvaeTAAAChUlEQVRoge2YT2sTQRjGf9Nmd6NFIlHx4EUQPbR48AOIVtFDUD9Bj6LFPwj2JngRBMFiBC9+Bc+CJ8GmQu9SAoIEL7UgDShEoWnavF7aZLvN7szszlbB/Z2WzOy8z5tn5mESKCgoKCj4n1F5LSwLwRUUrwHoq9tqev19HnVyaUCWqNIrfwGpbn/0k75/Wk132q5rjbleEIBe8DQkHuAw4xtP8ijl3AFZ9CcR9QkoRYa2QM6pCxvLLuu5d0BUnb3iAcZBvXRdzmkD0ghuAFcTplySheC6y5rOtpA08WkHy8AZTcUWv7pTqkbXRV13DrSD++jEAwinOBjcdVXWiQMjYlOHs1h148De2NThLFYzOxAXmw/mp/jR8QA4UulRf9iMvuokVrM7EBObXqk/ePa9fnQYHMVqpgaSYtP3ZPAcbiZC5lhN3YA08YHncePhbz3czAgFdXlHkFZHegc0semVhqL9eAcyx2qqBmSJKqhHSXN2O5DQAIDisXw4dDSNlnQOGMRmWLSnayBDrFo3IIv+JHBTNy+8bfxSwhkYLMwtafhnbfXYOxB/29yF8RkYkipWrRowuG0OsDoDQ6xj1bgBXWxGsTwDYUVWsWrugOltc5uwaM/kDOxgGatGd6EUt82sGN9WzRywv21mxThWtQ4k/EhP5Ntambcfj6OAa+e/c+LYus3rYHhb1YsyjM0or96cZHWtDMDX1QM8u/fZdomdWL2cNClxC9nEZpTOb2/ksyXaWI1twDY2o8zUVqhMbFKZ2GSmtpJ2GW2sxp4BaQRzwHz6yg4R5tTF7otRQ0lb6E5OcuwZi9eSz3+j+0h8A8IsitY+ahmNosWWmv3bMgoKCgoK/k3+AILkzValVvu5AAAAAElFTkSuQmCC');}\n\
-.blink {animation: blink 2s steps(5, start) infinite; -webkit-animation: blink 1s steps(5, start) infinite;}\n\
-@keyframes blink {to {visibility: hidden;}}\n\
-@-webkit-keyframes blink {to {visibility: hidden;}}\n\
-.confPopup {position: relative;opacity: 0;display: none;-webkit-transition: opacity 400ms ease-in;-moz-transition: opacity 400ms ease-in;transition: opacity 400ms ease-in;}\n\
-.confPopup:target{opacity: 1;display: block;}\n\
-.confPopup > div {width: 750px;position: fixed;top: 25px;left: 25px;margin: 10% auto;padding: 5px 20px 13px 20px;border-radius: 10px;background: #71a6fc;background: -moz-linear-gradient(#71a6fc, #fff);background: -webkit-linear-gradient(#71a6fc, #999);}\n\
-.closeconfPopup {background: #606061;color: #FFFFFF;line-height: 25px;position: absolute;right: -12px;text-align: center;top: -10px;width: 24px;text-decoration: none;-webkit-border-radius: 12px;-moz-box-shadow: 1px 1px 3px #000;}\n\
-.closeconfPopup:hover{background: #00d9ff;}\n\
+.table {width:100%;min-width:700px;padding-right:100%;height:50px;border-spacing:0px;}\n\
+.modal {display:none;position:fixed;z-index:1;left:0%;top:0%;height:100%;width:100%;overflow:scroll;background-color:#000000;}\n\
+.modal-content {background-color:#fff7e6;color:#000088;margin:5% auto;padding:15px;border:2px solid #888;height:90%;width:90%;min-height:755px;}\n\
+.close {color:#aaa;float:right;font-size:30px;font-weight:bold;}\n\
+.safe {border:none;height:48px;width:48px;cursor:pointer;background-repeat:no-repeat;background:transparent;background-position:center;vertical-align:center;background-image:url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADAAAAAwCAYAAABXAvmHAAAABmJLR0QA/wD/AP+gvaeTAAAErklEQVRoge2ZTUgcZxjH/8/MrAeJtFhXsn600hLd3VgLXbUUUtCQi8XFrGZNW1vooaQVDfReClsovZe6NubQk4eoUVd2TSmE4LEYhRYbbYT0kFiVbpQGF0V3Z54eojHdeXdnZmf0Ev+3fd6P+f3nfXbeL+BEJ3qxRU50Eh4NyztKppklrVViCmiAlwAPAacAgIEUmFaJ+L5GPC+p8p3AQsNsJBLR7D7bloGOWEe1pkl9DHwM4kqLzVdAPKyqcvTnromVQhkKMtA2GnYrrvS3DHwKoKjQh+9rD8Q/kax9HQ/GH1ttbNlAMNbxETP9AKDUalsDbTBT/3Tn5A0rjUwbCAxdcXncyUEQf2adzbyYaWg96b46//n1tJn6pgwE48Fizsg3AbTZojOvW6So4Xgwvm1UUTKqEBi64jpmeAB4nzPyVHg0bPj/MjTgcScHcbzwB7qwU7T3vVGlvCnUPhHqAfGwc0wFiPiDxMWpkZzFuQpCE6FX0sR/Aig7EjDz2iRFrcv1ic2ZQhni73CM8GUlxbmKSrWM/E2uQuEItI13VsmS9gD2JylTqj1diu7mevz6YAW37/0lqrJHinomHow/zC4QjoBC3I9jhlckCefOvIoLZ18XVStiVeoVFegMRCIRiYl7nAYVyedx43Lzm1CkQ4x336iGW5ROmvRJeDQsZ4d1BuYafn8HQJWzqHrVni5FV5MPsnSYxarGuHl3EcktwfxFXLnjSgeywzoDLGmtDrPq5K8o0735A/iltWTOdsR0PjumM0Ca1OgUqEj+ijJ0NZ4Vvvl88ADAgPEIAKi1TZlDduABgIjrsmN6A8Qes0B5vt06+TxuW/AAwICOTTQCp8x01uKtQW9rE3wet2Fdf0UZLjX5bcHvqyQ7YLiYE6nFW4MWbw1kiXCpyZ/XhN20MZLIQCpfA3dJMd6rfe3Z73wmjgB+KzugN8C0lq+H5NY2RmYXkNEODxRkidDd7Ed9VflRwoMAHZtoBJaNOlpe38To7B//M0FE6Ar4UF9VfmRpw0z3s2OiiWzOTGfL65sYv7sEVeNnMSJC6G2fEH587p7tnBex6QxIqnzHbIdLa0lhOone/OKq5RMTnURsOgOBhYZZAI/MdipKpwM5+bUB8DCw0DCfHdSt7mZmZrj2w7pygM6Z7XkjtYP1J1vwVbgh0dO37zA8AAxe7712OzsonAdUVY4C2LPS+/MjcQTwu1AyUVFBzj1xe6zjRzB9YfVJ/oqnu1Ancv45DSRCsauigpwzcXqv6CsAlikWVx87Db9BippzT5zTwC/dY5vMJHR9nGKm3nyHvnnXQtOdkzeYach5LJMijk53To7lq2K4mCvOKH0AYo5BmRQRT6deevKlUT1DA2PdYyopag+AW46QmVMCstY90zqTMapoajkdD8a31/4pvwjia/bZDEQcTb38b8jMyTRQwAVHe6zjMpgG4PypXZKZ+oxyPluWNzSJi1MjLiYvA4MAdq22F2gXwEA67fJahQdsXvK1x9srocr9YOoBUG2x+SMAw1Ay0UQw8XehDI5cs0YiEWnurd8aiek8AwEirmOgEof76xSYVgAss6TN7V+zzjtxzXqiE73o+g+dpfqwtFDpgQAAAABJRU5ErkJggg==');}\n\
+.warning {border:none;height:48px;width:48px;title:'Warning:probable water leak!';cursor:pointer;background-repeat:no-repeat;background:transparent;background-position:center;vertical-align:center;background-image:url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADAAAAAwCAYAAABXAvmHAAAABmJLR0QA/wD/AP+gvaeTAAAChUlEQVRoge2YT2sTQRjGf9Nmd6NFIlHx4EUQPbR48AOIVtFDUD9Bj6LFPwj2JngRBMFiBC9+Bc+CJ8GmQu9SAoIEL7UgDShEoWnavF7aZLvN7szszlbB/Z2WzOy8z5tn5mESKCgoKCj4n1F5LSwLwRUUrwHoq9tqev19HnVyaUCWqNIrfwGpbn/0k75/Wk132q5rjbleEIBe8DQkHuAw4xtP8ijl3AFZ9CcR9QkoRYa2QM6pCxvLLuu5d0BUnb3iAcZBvXRdzmkD0ghuAFcTplySheC6y5rOtpA08WkHy8AZTcUWv7pTqkbXRV13DrSD++jEAwinOBjcdVXWiQMjYlOHs1h148De2NThLFYzOxAXmw/mp/jR8QA4UulRf9iMvuokVrM7EBObXqk/ePa9fnQYHMVqpgaSYtP3ZPAcbiZC5lhN3YA08YHncePhbz3czAgFdXlHkFZHegc0semVhqL9eAcyx2qqBmSJKqhHSXN2O5DQAIDisXw4dDSNlnQOGMRmWLSnayBDrFo3IIv+JHBTNy+8bfxSwhkYLMwtafhnbfXYOxB/29yF8RkYkipWrRowuG0OsDoDQ6xj1bgBXWxGsTwDYUVWsWrugOltc5uwaM/kDOxgGatGd6EUt82sGN9WzRywv21mxThWtQ4k/EhP5Ntambcfj6OAa+e/c+LYus3rYHhb1YsyjM0or96cZHWtDMDX1QM8u/fZdomdWL2cNClxC9nEZpTOb2/ksyXaWI1twDY2o8zUVqhMbFKZ2GSmtpJ2GW2sxp4BaQRzwHz6yg4R5tTF7otRQ0lb6E5OcuwZi9eSz3+j+0h8A8IsitY+ahmNosWWmv3bMgoKCgoK/k3+AILkzValVvu5AAAAAElFTkSuQmCC');}\n\
+.blink {animation:blink 2s steps(5, start) infinite; -webkit-animation:blink 1s steps(5, start) infinite;}\n\
+@keyframes blink {to {visibility:hidden;}}\n\
+@-webkit-keyframes blink {to {visibility:hidden;}}\n\
+.confPopup {position:relative;opacity:0;display:none;-webkit-transition:opacity 400ms ease-in;-moz-transition:opacity 400ms ease-in;transition:opacity 400ms ease-in;}\n\
+.confPopup:target{opacity:1;display:block;}\n\
+.confPopup > div {width:750px;position:fixed;top:25px;left:25px;margin:10% auto;padding:5px 20px 13px 20px;border-radius:10px;background:#71a6fc;background:-moz-linear-gradient(#71a6fc, #fff);background:-webkit-linear-gradient(#71a6fc, #999);}\n\
+.closeconfPopup {background:#606061;color:#FFFFFF;line-height:25px;position:absolute;right:-12px;text-align:center;top:-10px;width:24px;text-decoration:none;-webkit-border-radius:12px;-moz-box-shadow:1px 1px 3px #000;}\n\
+.closeconfPopup:hover{background:#00d9ff;}\n\
 </style>\n</head>\n");
   }if(blankPage){
     WEB_F("<body>\n");
@@ -169,16 +170,22 @@ As long as no SSID is set and it is not connected to a master, the device acts a
 #else
       WEB_F("none");
 #endif
-      WEB_F("\" on: 192.168.4.1.<br><br>\n<table style='width: 100%'>\n\
-<th style='text-align:left;'><h3>Network name:</h3></th>\n<th style='text-align:left;'><h3>NTP server - TimeZone:</h3></th>\n<th style='text-align:left;'><h3>Reboot device:</h3></th>\n\
-<tr style='white-space: nowrap;'><td style='text-align:left;'>\n<form method='POST'>\n");
-      sendHTML_inputText(F("hostname"), hostname, "style='width:150px'");
+      WEB_F("\" on: 192.168.4.1.<br><br>\n<table style='width:100%'>\n\
+<th style='text-align:left;'><h3>Hostname</h3></th>\n\
+<th style='text-align:center;display:inline-block;'><h3>NTP Server - TZone-daylight</h3></th>\n\
+<th style='text-align:left;'><h3>ModemSleep</h3></th>\n\
+<th style='text-align:center;'><h3>Restart</h3></th>\n\
+<tr style='white-space:nowrap;'><td style='text-align:left;'>\n<form method='POST'>\n");
+      sendHTML_inputText(F("hostname"), hostname, "style='width:80px'");
       sendHTML_button("", F("Submit"), F("onclick='submit();'"));
-      WEB_F("</form>\n</td><td style='text-align: left;'>\n<form method='POST'>");
-      sendHTML_inputText(F("ntpServer"), ntpServer, "style='width:200px'");
-      sendHTML_inputNumber(F("localTimeZone"), String(localTimeZone, DEC), "min=-11 max=11 size=2 style='width:60px'");
+      WEB_F("</form>\n</td><td style='text-align:left;display:online-block;'>\n<form method='POST'>");
+      sendHTML_inputText(F("ntpServer"), ntpServer, "style='width:200px'"); WEB_F("&nbsp;");
+      sendHTML_inputNumber(F("localTimeZone"), String(localTimeZone, DEC), "min=-11 max=11 size=2 style='width:40px'");
+      WEB_F("&nbsp;&nbsp;&nbsp;"); sendHTML_checkbox(F("daylight"), daylight, ""); WEB_F("&nbsp;&nbsp;&nbsp;");
       sendHTML_button("", F("Submit"), F("onclick='submit();'"));
-      WEB_F("</form>\n</td><td style='text-align: center;'>\n<form method='POST'>");
+      WEB_F("</form>\n</td><td style='text-align:center;'>\n<form method='POST'>");
+      sendHTML_checkbox("lightSleepAllowed", lightSleepAllowed, F("onclick='lightSleepAllowed();'")); sendHTML_checkbox("lightSleep", true, F("style='display:none;'"));
+      WEB_F("</form>\n</td><td style='text-align:center;'>\n<form method='POST'>");
       sendHTML_button(F("restart"), F("Save Data"), F("onclick='submit();'")); sendHTML_checkbox("reboot", true, "style='display:none;'");
       WEB_F("</form>\n</td></tr></table>\n<br><h3>Network connection [");
       WEB_S(WiFi.macAddress());
@@ -198,9 +205,9 @@ As long as no SSID is set and it is not connected to a master, the device acts a
 </div></div>\n");
 //                             --------------------------------MAIN-------------------------------
     }WEB_F("<header>\n\
- <div style='text-align:right;white-space: nowrap;'><p><span class='close' onclick='showHelp();'>?&nbsp;</span></p></div>\n</header>\n\
+ <div style='text-align:right;white-space:nowrap;'><p><span class='close' onclick='showHelp();'>?&nbsp;</span></p></div>\n</header>\n\
 \n\
-<!HOME SECTION><section>\n<table id='counter' style='width: 100%'><col width='175px'><col width='260px'><tr>\n<td>\n<h3>");
+<!HOME SECTION><section>\n<table id='counter' style='width:100%'><col width='175px'><col width='260px'><tr>\n<td>\n<h3>");
     WEB_S(counterName); WEB_F(": </h3>\n\
 </td><td>\n<form id='0'>\n\
 <canvas id='canvasOdometer' width='100' height='40'");
@@ -223,7 +230,7 @@ As long as no SSID is set and it is not connected to a master, the device acts a
 
     if(authorizedIP()){
     //MQTT Parameters:
-      WEB_F("\n<!Parameters:>\n<div style='display: none;'>\n");
+      WEB_F("\n<!Parameters:>\n<div style='display:none;'>\n");
       for(ushort i(0); i<2; i++){   //Only one sensor, here... :-(
         sendHTML_checkbox ("mqttEnable"      +String(i, DEC),                    mqttEnable[i]);
         for(ushort j(0); j<mqttEnable[i]; j++){
@@ -239,9 +246,15 @@ As long as no SSID is set and it is not connected to a master, the device acts a
       WEB_F("<a title='Save configuration' class='closeconfPopup' onclick='closeConfPopup();'>X</a>\n");
       WEB_F("<div style='text-align:center;'><h2>Parameters setting</h2></div>\n\
 <div id='groupName'><h3 title='notification settings' style='display:inline-block;'>Index:</h3><h3 title='notification settings' style='display:none;'>Leak monitoring:</h3></div>\n\
-<table style='width: 100%'>\n<col width=33%><col width=33%>\n\
+<table style='width:100%'>\n<col width=33%><col width=33%>\n\
 <th id='label1' style='text-align:center;'><div style='display:inline-block;'>Counter Name</div><div style='display:none;'>Notification period</div></th>\n\
-<th id='label2' style='text-align:center;'><div style='display:inline-block;'>Deciliter per pulse</div><div style='display:none;'>Maximum consumption time</div></th>\n\
+<th id='label2' style='text-align:center;'><div style='display:inline-block;'>Deciliter per pulse</div><div style='display:none;'>");
+#ifdef MAXCONSUMPTIONTIME_MEASURE
+      WEB_F("Maximum consumption time");
+#else
+      WEB_F("Minimum non-consumption time");
+#endif
+      WEB_F("</div></th>\n\
 <th id='label3' style='text-align:center;'><div style='display:inline-block;'>Initial value</div><div style='display:none;'>Leak msg</div></th>\n\
 <tr><td id='param1' style='text-align:center;'><div style='display:inline-block;'>");
       sendHTML_inputText(F("counterName"), counterName, F("style='width:120px;'"));
@@ -264,7 +277,7 @@ As long as no SSID is set and it is not connected to a master, the device acts a
       sendHTML_inputText(F("mqttBroker"), mqttBroker, F("style='width:65%;'"));
       WEB_S(":");
       sendHTML_inputNumber(F("mqttPort"), String(mqttPort,DEC), F("min='0' max='-1' style='width:10%;'"));
-      WEB_F("</p>\n<table style='width: 100%'>\n<col width='42%'><col width='30%'><tr title='Server settings' style='white-space: nowrap;'><td>\nIdentification: ");
+      WEB_F("</p>\n<table style='width:100%'>\n<col width='42%'><col width='30%'><tr title='Server settings' style='white-space:nowrap;'><td>\nIdentification: ");
       sendHTML_inputText(F("mqttIdent"), mqttIdent, F("style='width:120px;'"));
       WEB_F("</td><td>\nUser: ");
       sendHTML_inputText(F("mqttUser"), mqttUser, F("style='width:120px;'"));
@@ -272,10 +285,10 @@ As long as no SSID is set and it is not connected to a master, the device acts a
       sendHTML_inputPwd(F("mqttPwd"), mqttPwd, F("style='width:75px;'"));
       WEB_F("</td></tr></table>\n<p align=center title='Server settings'>Topic: ");
       sendHTML_inputText(F("mqttTopic"), mqttQueue, F("style='width:80%;'"));
-      WEB_F("</p><br>\n<table id='mqttRaws' title='notification settings' border='1' cellpadding='10' cellspacing='1' style='width: 100%'>\n\
+      WEB_F("</p><br>\n<table id='mqttRaws' title='notification settings' border='1' cellpadding='10' cellspacing='1' style='width:100%'>\n\
 <col width='25%'><col width='25%'><col width='20%'><col width='25%'>\n\
 <tr>\n<th>FieldName</th><th>Nature</th><th>Type</th><th>Value</th><th>");
-      sendHTML_button("mqttPlus", "+", "title='Add a field name' style='background-color: rgba(0, 0, 0, 0);' onclick='mqttAddRaw();'");
+      sendHTML_button("mqttPlus", "+", "title='Add a field name' style='background-color:rgba(0, 0, 0, 0);' onclick='mqttAddRaw();'");
       WEB_F("</th></tr>\n</table>\n</div></form></div></div>\n");
     }
     WEB_F("</section>\n\n<footer>\n<h6>(<div id='date' style='display:inline-block;'></div>V");
@@ -335,8 +348,11 @@ function deleteSSID(e){var f,s;\n\
    f.submit();\n\
  }}else alert('Empty SSID...');\n\
 }\n\
+function lightSleepAllowed(){\n\
+ if("); WEB_S(COUNTERPIN==D0 ?"true" :"false"); WEB_F("){alert('Sorry: GPIO16 is already in use!');lightSleepAllowed.checked=false;}\n\
+ submit();\n}\n\
 //MQTT Forms:\n\
-function setDisabled(v, b){for(var i=0;v[i];i++)v[i].disabled=b;}\n\
+function setDisabled(v,b){for(var i=0;v[i];i++)v[i].disabled=b;}\n\
 function mqttAllRawsRemove(){var t,r;for(t=document.getElementById('mqttPlus');t.tagName!='TR';)t=t.parentNode;t=t.parentNode;\n\
  r=t.getElementsByTagName('TR');while(r[1])t.removeChild(r[1]);\n\
 }\n\
@@ -369,7 +385,7 @@ function mqttRawAdd(){var t;for(t=document.getElementById('mqttPlus');t.tagName!
  td.appendChild(i=document.createElement('input'));i.id=i.name='mqttValue'+n;i.value='0';i.type='text';i.style='width:60%;text-align:center;';\n\
  td.appendChild(i=document.createElement('b'));i.innerHTML='\"';\n\
  tr.appendChild(td=document.createElement('td'));td.style='text-align:center;';\n\
- td.appendChild(i=document.createElement('input'));i.id='mqttMinus'+n;i.type='button';i.value='-';i.style='background-color: rgba(0, 0, 0, 0);';i.setAttribute('onclick','mqttRawRemove(this);');\n\
+ td.appendChild(i=document.createElement('input'));i.id='mqttMinus'+n;i.type='button';i.value='-';i.style='background-color:rgba(0, 0, 0, 0);';i.setAttribute('onclick','mqttRawRemove(this);');\n\
 }\n\
 function checkConfPopup(){var r;\n\
  if(document.getElementById('counterName').value==='')return false;\n\
@@ -469,6 +485,8 @@ void writeConfig(){                                     //Save current config:
     f.println(leakMsg);
     f.println(ntpServer);
     f.println(localTimeZone);
+    f.println(daylight);
+    f.println(lightSleepAllowed);
     f.println(dailyData.size());
     for (std::map<ulong,ulong>::const_iterator it=dailyData.begin(); it!=dailyData.end(); it++){
       f.println(it->first);
@@ -532,6 +550,8 @@ bool readConfig(bool w){                                //Get config (return fal
   isNew|=getConfig(leakMsg, f, w);
   isNew|=getConfig(ntpServer, f, w);
   isNew|=getConfig(localTimeZone, f, w);
+  isNew|=getConfig(daylight, f, w);
+  isNew|=getConfig(lightSleepAllowed, f, w);
   ushort n=dailyData.size();
   isNew|=getConfig(n, f); dailyData.erase( dailyData.begin(), dailyData.end() );
   for(ushort i(0); (!isNew||w) && i<n; i++){
@@ -581,16 +601,20 @@ bool WiFiHost(){
   return false;
 }
 
-void WiFiDisconnect(){
+void WiFiDisconnect(ulong duration=0L){
   next_reconnect=millis()+WIFISTADELAYRETRY;
   if(WiFiAP || WIFI_STA_Connected())
     DEBUG_print("Wifi disconnected!...\n");
   WiFi.softAPdisconnect(); WiFi.disconnect(); WiFiAP=false;
-}
+  WiFi.mode(WIFI_OFF);
+  if(duration){
+    WiFi.forceSleepBegin(); delay(1L);
+    next_reconnect=millis()+duration;
+} }
 
 bool WiFiConnect(){
 #ifdef DEFAULTWIFIPASS
-  WiFiDisconnect();
+  WiFiDisconnect(); WiFi.forceSleepWake(); delay(1L);
   DEBUG_print("\n");
   for(ushort i(0); i<SSIDCount(); i++) if(ssid[i].length()){
 
@@ -741,10 +765,13 @@ void  handleRoot(){ bool w, blankPage=false;
   }else if(ESPWebServer.hasArg("ntpServer") || ESPWebServer.hasArg("localTimeZone")){
     if((w|=ESPWebServer.hasArg("ntpServer")))     ntpServer=ESPWebServer.arg("ntpServer");
     if((w|=ESPWebServer.hasArg("localTimeZone"))) localTimeZone=atoi(ESPWebServer.arg("localTimeZone").c_str());
+    if((w|=(ESPWebServer.hasArg("daylight")!=daylight))) daylight=ESPWebServer.hasArg("daylight");
     reboot();
-  }else if((w=ESPWebServer.hasArg("reboot"))){
+  }else if(ESPWebServer.hasArg("lightSleep")){
+    if((w|=(ESPWebServer.hasArg("lightSleepAllowed")!=lightSleepAllowed))) lightSleepAllowed=ESPWebServer.hasArg("lightSleepAllowed");
+  }else if(ESPWebServer.hasArg("reboot")){
     reboot();
-  }else if((w=ESPWebServer.hasArg("password"))){
+  }else if((w|=ESPWebServer.hasArg("password"))){
     handleSubmitSSIDConf(); shiftSSID();                  //Set WiFi connections
     if(WiFiAP && ssid[0].length()) WiFiConnect();
   }else if(ESPWebServer.hasArg("plugNum")){
@@ -858,8 +885,8 @@ bool deleteSPIFFSDataFile(bool b){
 void deleteDataFile(bool b=false) {deleteSPIFFSDataFile(b);}
 bool isRemovingDataFile()         {return deleteSPIFFSDataFile(false);};
 
-inline ulong currentHour(const ulong& h) {return ((h/3600UL )*3600UL );}
-inline ulong currentDay (const ulong& d) {return ((d/86400UL)*86400UL);}
+inline ulong currentHour(const ulong& h=now()) {return ((h/3600UL )*3600UL );}
+inline ulong currentDay (const ulong& d=now()) {return ((d/86400UL)*86400UL);}
 
 bool reindexMap(){
   if(isTimeSynchronized()){
@@ -896,12 +923,16 @@ void pushData(){   // Every hours...
     if((sec-=currentHour(sec))<PUSHDATA_DELAY*2L){
       dailyData[currentHour(now())]=counterValue;
       DEBUG_print("Data pushed.\n");
-      if(isTimeSynchronized())
+      if(isTimeSynchronized()){
         mqttNotifyIndex();
-      dataFileWrite();
+        next_lightSleep = millis() + awakeTime/2;
+      }dataFileWrite();
     }next_pushData = millis() + (isTimeSynchronized() ?((3600UL - sec)*1000UL) :(PUSHDATA_DELAY*1000UL));
   }deleteDataFile();
-}
+  if(lightSleepAllowed && next_lightSleep && isNow(next_lightSleep) ){
+    WiFiDisconnect( (3600UL-awakeTime/2-now()-currentHour())*1000UL );
+    if(true) {WiFiDisconnect(); WiFi.mode(WIFI_OFF); WiFi.forceSleepBegin(); delay(1);}
+} }
 
 //Gestion des switchs/Switchs management
 void ICACHE_RAM_ATTR counterInterrupt(){intr=true;}
@@ -916,6 +947,21 @@ void interruptTreatment(){
       intr=false;
 } } }
 
+#ifdef MAXCONSUMPTIONTIME_MEASURE
+void leakChecker(){
+  if(isNow(next_leakDetected)){  // ...in control period.
+    if(leakStatus>0) leakStatus--;
+    DEBUG_print("Leak notification!...\n");
+    mqttNotifyWarning();
+    next_leakDetected=millis() + leakNotifPeriod;
+  }if(isNow(next_leakCheck)){           // Minimal fixing time reached...
+    if(leakStatus <= MAXLEAKDETECT) leakStatus++;
+    mqttNotifyWarning();
+    next_leakDetected=millis() + leakNotifPeriod;
+    next_leakCheck=millis() + maxConsumTime;
+} }
+
+#else
 void leakChecker(){
   if(isNow(next_leakCheck)){           // Minimal fixing time reached...
     if(leakStatus>0) leakStatus--;
@@ -928,6 +974,7 @@ void leakChecker(){
     mqttNotifyWarning();
     next_leakDetected=millis() + leakNotifPeriod;
 } }
+#endif
 
 // ***********************************************************************************************
 // **************************************** SETUP ************************************************
@@ -946,7 +993,7 @@ void setup(){
   attachInterrupt(digitalPinToInterrupt(COUNTERPIN), counterInterrupt, FALLING);
 
   // Servers:
-  WiFi.softAPdisconnect(); WiFi.disconnect();
+  WiFi.softAPdisconnect(); WiFiDisconnect(5000L);
   //Definition des URLs d'entree /Input URL definitions
   ESPWebServer.on("/",             [](){handleRoot(); ESPWebServer.client().stop();});
   ESPWebServer.on("/index",        [](){setIndex();   ESPWebServer.send(200, "text/plain", "[" + String(now(), DEC) + "," + getCounter() + "]");});
@@ -963,7 +1010,7 @@ void setup(){
   MDNS.addService("http", "tcp", 80);
   Serial_print("HTTP server started\n");
 
-  NTP.begin(ntpServer, localTimeZone);
+  NTP.begin(ntpServer, localTimeZone, daylight);
   NTP.setInterval(NTP_INTERVAL);
 
 #ifdef DEBUG
