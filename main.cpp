@@ -814,7 +814,7 @@ bool mqttNotify(ushort n){
         return false;
       }s+="\n}\n";
       mqttClient.publish(mqttQueue.c_str(), s.c_str());
-      DEBUG_print((n ?"Warning message published to \"" :"Counter Value published to \"") + mqttBroker + "\".\n");
+      DEBUG_print((n ?"Leak control message published to \"" :"Counter Value published to \"") + mqttBroker + "\".\n");
       return true;
   } }
   DEBUG_print("MQTT server \"" + mqttBroker + ":" + String(mqttPort,DEC) + "\" not found...\n");
