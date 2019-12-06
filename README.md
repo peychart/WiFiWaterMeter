@@ -55,3 +55,10 @@ Hardware:
 
 * ![](doc/images/esp8266.jpg)
 
+* ![](doc/images/domoticz/case1.jpg)
+
+* ![](doc/images/domoticz/case2.jpg)
+
+* ![](doc/images/domoticz/case3.jpg)
+
+
