@@ -51,7 +51,7 @@ C++ source, HTML, Javascript & JSON format.
 Hardware:
 ---------
 
-* ESP8266 Mini WiFi Nodemcu Module with 18650 battery support (autonomy more than 10h in case of power failure):
+* ESP8266 Mini WiFi Nodemcu Module with 18650 battery support (autonomy more than 10h in case of power failure), 1 x zener 3.3v, 1 x 360R, 1 x USB-A connector, 1 x 2 pins xh 2.54mm female connector :
 
 * ![](doc/images/esp8266.jpg)
 
