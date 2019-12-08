@@ -759,22 +759,22 @@ inline void check_leakNotifPeriod(){
 }
 
 void  handleRoot(){ bool w, blankPage=false;
-  if((w=ESPWebServer.hasArg("hostname"))){
-    hostname=ESPWebServer.arg("hostname");                //Set host name
+  if((w=ESPWebServer.hasArg("hostname"))){                                                    //Set host name
+    hostname=ESPWebServer.arg("hostname");
     reboot();
-  }else if(ESPWebServer.hasArg("ntpServer") || ESPWebServer.hasArg("localTimeZone")){
+  }else if(ESPWebServer.hasArg("ntpServer") || ESPWebServer.hasArg("localTimeZone")){         //set NTP service
     if((w|=ESPWebServer.hasArg("ntpServer")))     ntpServer=ESPWebServer.arg("ntpServer");
     if((w|=ESPWebServer.hasArg("localTimeZone"))) localTimeZone=atoi(ESPWebServer.arg("localTimeZone").c_str());
     if((w|=(ESPWebServer.hasArg("daylight")!=daylight))) daylight=ESPWebServer.hasArg("daylight");
     reboot();
-  }else if(ESPWebServer.hasArg("lightSleep")){
+  }else if(ESPWebServer.hasArg("lightSleep")){                                                //set modem sleep
     if((w|=(ESPWebServer.hasArg("lightSleepAllowed")!=lightSleepAllowed))) lightSleepAllowed=ESPWebServer.hasArg("lightSleepAllowed");
   }else if(ESPWebServer.hasArg("reboot")){
     reboot();
-  }else if((w|=ESPWebServer.hasArg("password"))){
-    handleSubmitSSIDConf(); shiftSSID();                  //Set WiFi connections
+  }else if((w|=ESPWebServer.hasArg("password"))){                                             //set WiFi connections
+    handleSubmitSSIDConf(); shiftSSID();
     if(WiFiAP && ssid[0].length()) WiFiConnect();
-  }else if(ESPWebServer.hasArg("plugNum")){
+  }else if(ESPWebServer.hasArg("plugNum")){                                                   //set counter name
     w|=handleSubmitMQTTConf(atoi(ESPWebServer.arg("plugNum").c_str()));
   }if(w) writeConfig();
   sendHTML(blankPage);
