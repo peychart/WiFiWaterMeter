@@ -311,7 +311,7 @@ function refresh(v=20){var e=document.getElementById('about');\n\
  if(v>0)this.timer=setTimeout(function(){RequestStatus();refresh();},v*1000);\n\
 }\n\
 function RequestStatus(){var canvas,v,ret,req=new XMLHttpRequest();\n\
- req.open('GET',location.protocol+'//'+location.host+'/index',false);req.send(null);ret=req.responseText.trim();\n\
+ req.open('GET',location.protocol+'//'+location.host+'/getCurrentIndex',false);req.send(null);ret=req.responseText.trim();\n\
  if(ret.indexOf('[')>=0 && ret.indexOf(',')>=0 && ret.indexOf(']')>=0){\n\
   var s='No NTP sync', v=parseInt(ret.substring(ret.indexOf('[')+1,ret.indexOf(',')));\n\
   if(v>946684800){s=(new Date(v*1000)).toISOString();s=s.substring(0,s.indexOf('T')).split('-').join('/');}\n\
@@ -916,12 +916,12 @@ void dataFileWrite(){
 } } }
 
 void pushData(){   // Every hours...
-  static ulong next_pushData=PUSHDATA_DELAY*1000UL;
+  static ulong previousValue=counterValue, next_pushData=PUSHDATA_DELAY*1000UL;
   if(isNow(next_pushData)){
-    DEBUG_print("Look for pushing data...\n");
     ulong sec(now());
-    if((sec-=currentHour(sec))<PUSHDATA_DELAY*2L){
-      dailyData[currentHour(now())]=counterValue;
+    DEBUG_print("Look for pushing data...\n");
+    if((sec-=currentHour(sec))<PUSHDATA_DELAY*2L && previousValue!=counterValue){
+      dailyData[currentHour(now())]=previousValue=counterValue;
       DEBUG_print("Data pushed.\n");
       if(isTimeSynchronized()){
         mqttNotifyIndex();
@@ -995,16 +995,16 @@ void setup(){
   // Servers:
   WiFi.softAPdisconnect(); WiFiDisconnect(5000L);
   //Definition des URLs d'entree /Input URL definitions
-  ESPWebServer.on("/",                [](){handleRoot(); ESPWebServer.client().stop();});
-  ESPWebServer.on("/index",           [](){setIndex();   ESPWebServer.send(200, "text/plain", "[" + String(now(), DEC) + "," + getCounter() + "]");});
-  ESPWebServer.on("/historic",        [](){if(authorizedIP()){getHistoric();          }else ESPWebServer.send(403, "text/plain", "403: access denied");});
-  ESPWebServer.on("/dayRecords",      [](){if(authorizedIP()){getDayRecords();        }else ESPWebServer.send(403, "text/plain", "403: access denied");});
-  ESPWebServer.on("/resetHistoric",   [](){if(authorizedIP()){deleteDataFile();       }else ESPWebServer.send(403, "text/plain", "403: access denied");});
-  ESPWebServer.on("/modemSleepAlowed",[](){if(authorizedIP()){lightSleepAllowed=true; }else ESPWebServer.send(403, "text/plain", "403: access denied");});
-  ESPWebServer.on("/modemSleepDenied",[](){if(authorizedIP()){lightSleepAllowed=false;}else ESPWebServer.send(403, "text/plain", "403: access denied");});
-  ESPWebServer.on("/restart",         [](){if(authorizedIP()){reboot();               }else ESPWebServer.send(403, "text/plain", "403: access denied");});
-//ESPWebServer.on("/about",           [](){ ESPWebServer.send(200, "text/plain", getHelp()); });
-  ESPWebServer.onNotFound(            [](){ESPWebServer.send(404, "text/plain", "404: Not found");});
+  ESPWebServer.on("/",                 [](){handleRoot(); ESPWebServer.client().stop();});
+  ESPWebServer.on("/getCurrentIndex",  [](){setIndex();   ESPWebServer.send(200, "text/plain", "[" + String(now(), DEC) + "," + getCounter() + "]");});
+  ESPWebServer.on("/getData",          [](){if(authorizedIP()){getHistoric();          }else ESPWebServer.send(403, "text/plain", "403: access denied");});
+  ESPWebServer.on("/getCurrentRecords",[](){if(authorizedIP()){getDayRecords();        }else ESPWebServer.send(403, "text/plain", "403: access denied");});
+  ESPWebServer.on("/resetHistoric",    [](){if(authorizedIP()){deleteDataFile();       }else ESPWebServer.send(403, "text/plain", "403: access denied");});
+  ESPWebServer.on("/modemSleepAllowed", [](){if(authorizedIP()){lightSleepAllowed=true; }else ESPWebServer.send(403, "text/plain", "403: access denied");});
+  ESPWebServer.on("/modemSleepDenied", [](){if(authorizedIP()){lightSleepAllowed=false;}else ESPWebServer.send(403, "text/plain", "403: access denied");});
+  ESPWebServer.on("/restart",          [](){if(authorizedIP()){reboot();               }else ESPWebServer.send(403, "text/plain", "403: access denied");});
+//ESPWebServer.on("/about",            [](){ ESPWebServer.send(200, "text/plain", getHelp()); });
+  ESPWebServer.onNotFound(             [](){ESPWebServer.send(404, "text/plain", "404: Not found");});
 
   httpUpdater.setup(&ESPWebServer);  //Adds OnTheAir updates:
   ESPWebServer.begin();              //Demarrage du serveur web /Web server start
