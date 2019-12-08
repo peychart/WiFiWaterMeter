@@ -652,7 +652,7 @@ bool WiFiConnect(){
 inline void reboot(){writeConfig(); ESP.restart();}
 
 inline void memoryTest(){
-#ifdef MEMORYLEAKS
+#ifdef MEMORYLEAKS      //oberved on DNS server (bind9/NTP) errors -> reboot each ~30mn
   ulong f=ESP.getFreeHeap();
   if(f<MEMORYLEAKS) reboot();
   DEBUG_print("FreeMem: " + String(f, DEC) + "\n");
