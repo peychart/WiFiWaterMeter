@@ -915,12 +915,12 @@ void dataFileWrite(){
       DEBUG_print("Cannot open data file!...\n");
 } } }
 
-void pushData(){   // Every hours...
+void pushData(){   // Each hour...
   static ulong previousValue=counterValue, next_pushData=PUSHDATA_DELAY*1000UL;
   if(isNow(next_pushData)){
     ulong sec(now());
     DEBUG_print("Look for pushing data...\n");
-    if((sec-=currentHour(sec))<PUSHDATA_DELAY*2L && previousValue!=counterValue){
+    if((sec-=currentHour(sec))<PUSHDATA_DELAY*2L && previousValue!=counterValue){ //Only on changed value...
       dailyData[currentHour(now())]=previousValue=counterValue;
       DEBUG_print("Data pushed.\n");
       if(isTimeSynchronized()){
@@ -1006,7 +1006,7 @@ void setup(){
 //ESPWebServer.on("/about",            [](){ ESPWebServer.send(200, "text/plain", getHelp()); });
   ESPWebServer.onNotFound(             [](){ESPWebServer.send(404, "text/plain", "404: Not found");});
 
-  httpUpdater.setup(&ESPWebServer);  //Adds OnTheAir updates:
+  httpUpdater.setup(&ESPWebServer);  //Adds OnTheAir updates
   ESPWebServer.begin();              //Demarrage du serveur web /Web server start
   MDNS.begin(hostname.c_str());
   MDNS.addService("http", "tcp", 80);
