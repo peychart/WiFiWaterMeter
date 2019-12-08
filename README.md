@@ -23,7 +23,7 @@ C++ source, HTML, Javascript & JSON format.
 * modem sleep option allowed between measures...
 
 
-Http requests available :
+Http requests available (except from EXCLUDED_IPV4_FROM_TUNE) :
 <table>
   <tr>
     <td><tt>http://IPAddress</tt></td>
