@@ -39,7 +39,7 @@ Http requests available :
   </tr>
   <tr>
     <td><tt>http://IPAddress/getCurrentRecords</tt></td>
-    <td>not yet indexed values (on NTP error)</td>
+    <td>not yet indexed measures (on NTP error)</td>
   </tr>
   <tr>
     <td><tt>http://IPAddress/resetHistoric</tt></td>
