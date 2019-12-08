@@ -23,7 +23,7 @@ C++ source, HTML, Javascript & JSON format.
 * modem sleep option allowed between measures...
 
 
-Http request available :
+Http requests available :
 <table>
   <tr>
     <td><tt>http://IPAddress</tt></td>
@@ -46,11 +46,11 @@ Http request available :
     <td>current data file will be erased after DELETEDATAFILE_DELAY (ms)</td>
   </tr>
   <tr>
-    <td><tt>http://IPAddress/modemSleepAlowed</tt></td>
+    <td><tt>http://IPAddress/modemSleepAllowed</tt></td>
     <td>UI available during AWAKETIME (s) before and after each hour</td>
   </tr>
   <tr>
-    <td><tt>http://IPAddress/modemSleepAlowed</tt></td>
+    <td><tt>http://IPAddress/modemSleepDenied</tt></td>
     <td>WiFi always connected and UI always available (maximum power consumption)</td>
   </tr>
   <tr>
