@@ -17,8 +17,8 @@ C++ source, HTML, Javascript & JSON format.
 * 3 configurable SSID,
 * web interface configuration,
 * definition of IPs (such as the reverse proxy) excluded from configuration changes; allows secure exposure of the (only) home page to the Internet,
-* debug trace available by telnet console,
-* firmware update via WiFi, without loss of data and setting,
+* debug trace available by telnet console (#ifdef DEBUG),
+* firmware update via WiFi, without loss of data or setting,
 * accepts HTML commands from the home automation software: current counter value, log history recovery in JSON format, clear current history, backup of current measures with reboot, ...
 * modem sleep option allowed between measures...
 
