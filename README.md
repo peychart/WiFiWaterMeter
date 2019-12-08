@@ -47,7 +47,7 @@ Http requests available (except from EXCLUDED_IPV4_FROM_TUNE) :
   </tr>
   <tr>
     <td><tt>http://IPAddress/modemSleepAllowed</tt></td>
-    <td>UI available during AWAKETIME (s) before and after each hour</td>
+    <td>UI available during AWAKETIME (s) before and after each hour (minimum power consumption)</td>
   </tr>
   <tr>
     <td><tt>http://IPAddress/modemSleepDenied</tt></td>
