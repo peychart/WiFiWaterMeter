@@ -77,7 +77,7 @@ std::vector<ushort>                   mqttEnable(0);
 bool notifyProxy(ushort, String="");
 bool readConfig(bool=true);
 void writeConfig();
-ulong time(bool b=false);
+ulong time(bool=false);
 
 inline bool   isNow(ulong v)                    {ulong ms(millis()); return((v<ms) && (ms-v)<INFINY);}  //Because of millis() rollover:
 inline bool   isTimeSynchronized(ulong t=now()) {return(t>-1UL/10UL);}
@@ -292,7 +292,7 @@ As long as no SSID is set and it is not connected to a master, the device acts a
       WEB_F("</th></tr>\n</table>\n</div></form></div></div>\n");
     }
     WEB_F("</section>\n\n<footer>\n<h6>(<div id='date' style='display:inline-block;'></div>V");
-    WEB_S(String(ResetConfig,DEC));
+    WEB_S(String(version,DEC));
     WEB_F(", Uptime: ");
     ulong sec=millis()/1000UL;
     WEB_S(String(sec/(24UL*3600UL)) + "d-");
@@ -471,7 +471,7 @@ void writeConfig(){                                     //Save current config:
   }File f=SPIFFS.open("/config.txt", "w+");
   DEBUG_print("Writing SPIFFS.\n");
   if(f){
-    f.println(ResetConfig);
+    f.println(version);
     f.println(hostname);                           //Save hostname
     shiftSSID(); for(ushort i(0); i<SSIDCount(); i++){  //Save SSIDs
       f.println(ssid[i]);
@@ -524,7 +524,7 @@ bool readConfig(bool w){                                //Get config (return fal
     DEBUG_print("Cannot open SPIFFS!...\n");
     return false;
   }File f(SPIFFS.open("/config.txt", "r"));
-  if(f && ResetConfig!=atoi(readString(f).c_str())){
+  if(f && version!=atoi(readString(f).c_str())){
     f.close();
     if(w) DEBUG_print("New configFile version...\n");
   }if(!f){
@@ -1000,7 +1000,7 @@ void setup(){
   ESPWebServer.on("/getData",          [](){if(authorizedIP()){getHistoric();          }else ESPWebServer.send(403, "text/plain", "403: access denied");});
   ESPWebServer.on("/getCurrentRecords",[](){if(authorizedIP()){getDayRecords();        }else ESPWebServer.send(403, "text/plain", "403: access denied");});
   ESPWebServer.on("/resetHistoric",    [](){if(authorizedIP()){deleteDataFile();       }else ESPWebServer.send(403, "text/plain", "403: access denied");});
-  ESPWebServer.on("/modemSleepAllowed", [](){if(authorizedIP()){lightSleepAllowed=true; }else ESPWebServer.send(403, "text/plain", "403: access denied");});
+  ESPWebServer.on("/modemSleepAllowed",[](){if(authorizedIP()){lightSleepAllowed=true; }else ESPWebServer.send(403, "text/plain", "403: access denied");});
   ESPWebServer.on("/modemSleepDenied", [](){if(authorizedIP()){lightSleepAllowed=false;}else ESPWebServer.send(403, "text/plain", "403: access denied");});
   ESPWebServer.on("/restart",          [](){if(authorizedIP()){reboot();               }else ESPWebServer.send(403, "text/plain", "403: access denied");});
 //ESPWebServer.on("/about",            [](){ ESPWebServer.send(200, "text/plain", getHelp()); });
