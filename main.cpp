@@ -292,7 +292,7 @@ As long as no SSID is set and it is not connected to a master, the device acts a
       WEB_F("</th></tr>\n</table>\n</div></form></div></div>\n");
     }
     WEB_F("</section>\n\n<footer>\n<h6>(<div id='date' style='display:inline-block;'></div>V");
-    WEB_S(String(version,DEC));
+    WEB_S(String(VERSION));
     WEB_F(", Uptime: ");
     ulong sec=millis()/1000UL;
     WEB_S(String(sec/(24UL*3600UL)) + "d-");
@@ -471,7 +471,7 @@ void writeConfig(){                                     //Save current config:
   }File f=SPIFFS.open("/config.txt", "w+");
   DEBUG_print("Writing SPIFFS.\n");
   if(f){
-    f.println(version);
+    f.println(String(VERSION).substring(0, String(VERSION).indexOf(".")));
     f.println(hostname);                           //Save hostname
     shiftSSID(); for(ushort i(0); i<SSIDCount(); i++){  //Save SSIDs
       f.println(ssid[i]);
@@ -524,7 +524,7 @@ bool readConfig(bool w){                                //Get config (return fal
     DEBUG_print("Cannot open SPIFFS!...\n");
     return false;
   }File f(SPIFFS.open("/config.txt", "r"));
-  if(f && version!=atoi(readString(f).c_str())){
+  if(f && String(VERSION).substring(0, String(VERSION).indexOf("."))!=readString(f)){
     f.close();
     if(w) DEBUG_print("New configFile version...\n");
   }if(!f){
