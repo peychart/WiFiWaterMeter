@@ -8,6 +8,7 @@
 #define WIFIAPDELAYRETRY        300000UL
 //#define MEMORYLEAKS           10000L
 #define SSIDCount()             3
+#define REFRESH_PERIOD          20                  //(s)
 
 #define DEFAULTTIMEZONE         -10
 #define DEFAULTNTPSERVER        "fr.pool.ntp.org"
@@ -39,4 +40,4 @@
 
 #define BACKGROUND_IMAGE       "https://static.mycity.travel/manage/uploads/7/36/12705/989bd67a1aad43055bd0322e9694f8dd8fab2b43_1080.jpg"
 
-#define DEBUG
+//#define DEBUG
