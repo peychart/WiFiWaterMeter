@@ -306,7 +306,9 @@ As long as no SSID is set and it is not connected to a master, the device acts a
 var odometer;\n\
 this.timer=0;\n\
 function init(){try{odometer=new steelseries.Odometer('canvasOdometer', {'decimals':3});}catch(e){;};refresh(1);}\n\
-function refresh(v=20){var e=document.getElementById('about');\n\
+function refresh(v=");
+    WEB_S(String(REFRESH_PERIOD, DEC));
+    WEB_F("){var e=document.getElementById('about');\n\
  clearTimeout(this.timer);if(e)e.style.display='none';\n\
  if(v>0)this.timer=setTimeout(function(){RequestStatus();refresh();},v*1000);\n\
 }\n\
@@ -660,7 +662,8 @@ inline void memoryTest(){
 }
 
 inline void onConnect(){
-  ;
+  MDNS.begin(hostname.c_str());
+  MDNS.addService("http", "tcp", 80);
 #ifdef DEBUG
   if(!WiFiAP){
     telnetServer.begin();
@@ -1008,8 +1011,6 @@ void setup(){
 
   httpUpdater.setup(&ESPWebServer);  //Adds OnTheAir updates
   ESPWebServer.begin();              //Demarrage du serveur web /Web server start
-  MDNS.begin(hostname.c_str());
-  MDNS.addService("http", "tcp", 80);
   Serial_print("HTTP server started\n");
 
   NTP.begin(ntpServer, localTimeZone, daylight);
