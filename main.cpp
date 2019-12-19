@@ -181,7 +181,7 @@ As long as no SSID is set and it is not connected to a master, the device acts a
       WEB_F("</form>\n</td><td style='text-align:left;display:online-block;'>\n<form method='POST'>");
       sendHTML_inputText(F("ntpServer"), ntpServer, "style='width:200px'"); WEB_F("&nbsp;");
       sendHTML_inputNumber(F("localTimeZone"), String(localTimeZone, DEC), "min=-11 max=11 size=2 style='width:40px'");
-      WEB_F("&nbsp;&nbsp;&nbsp;"); sendHTML_checkbox(F("daylight"), daylight, ""); WEB_F("&nbsp;&nbsp;&nbsp;");
+      WEB_F("&nbsp;&nbsp;"); sendHTML_checkbox(F("daylight"), daylight, ""); WEB_F("&nbsp;&nbsp;");
       sendHTML_button("", F("Submit"), F("onclick='submit();'"));
       WEB_F("</form>\n</td><td style='text-align:center;'>\n<form method='POST'>");
       sendHTML_checkbox("lightSleepAllowed", lightSleepAllowed, F("onclick='lightSleepAllowed();'")); sendHTML_checkbox("lightSleep", true, F("style='display:none;'"));
