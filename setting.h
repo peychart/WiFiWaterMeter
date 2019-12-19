@@ -6,9 +6,9 @@
 #define WIFISTADELAYRETRY       30000UL
 #define MAXWIFIRETRY            2
 #define WIFIAPDELAYRETRY        300000UL
-//#define MEMORYLEAKS           10000L
+#define MEMORYLEAKS           10000L
 #define SSIDCount()             3
-#define REFRESH_PERIOD          20                  //(s)
+#define WEB_REFRESH_PERIOD      20                  //(s)
 
 #define DEFAULTTIMEZONE         -10
 #define DEFAULTNTPSERVER        "fr.pool.ntp.org"
@@ -20,7 +20,7 @@
 #define COUNTERPIN              D5
 #define DEBOUNCE_DELAY          50UL                //(ms)
 #define MULTIPLIER              5UL                 //Deciliter per pulse...
-#define UNIT_DISPLAY            10L                 // 1L ->unit=Liter, 1000L->unit=m3
+#define UNIT_DISPLAY            10L                 // 1L ->unit=Liter, 1000L->unit=m3 (API REST only)
 #define DELETEDATAFILE_DELAY    600000UL            //(ms)
 
 #define EXCLUDED_IPV4_FROM_TUNE 192,168,0,249       //Update requests from this (IP & MASK) (HAProxy server?) are prohibited...
@@ -29,7 +29,7 @@
 //Default values (editable in the web interface):
 //#define MAXCONSUMPTIONTIME_MEASURE
 #define WATERLEAK_MESSAGE      "Warning: probable water leak!"
-#define MAXLEAKDETECT           4
+#define MAXLEAKDETECT           4                   //Warning level...
 
 #define DEFAULT_MQTT_SERVER    "mosquitto.home.lan"
 #define DEFAULT_MQTT_PORT       1883
