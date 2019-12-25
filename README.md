@@ -21,7 +21,7 @@ C++ source, HTML, Javascript & JSON format.
 * firmware update via WiFi, without loss of data or setting,
 * accepts HTML commands from the home automation software: current counter value, log history recovery in JSON format, clear current history, backup of current measures with reboot, ...
 * modem sleep option allowed between measures...
-* connection to pulse sensor: 5v/5mA, bounce filtering.
+* connection to pulse sensor: 3.3v/5mA, bounce filtering.
 
 
 Http requests available (except from EXCLUDED_IPV4_FROM_TUNE):
