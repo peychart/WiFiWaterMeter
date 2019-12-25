@@ -99,4 +99,11 @@ Hardware:
 
 * ![](doc/images/case3.jpg)
 
+* ![](doc/images/pulseCounter.jpg)
+
+* Pulse counter
+
+* ![](doc/images/IzarSensor.jpg)
+
+* Izar magnetic sensor
 
