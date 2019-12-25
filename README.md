@@ -80,9 +80,9 @@ Http requests available (except from EXCLUDED_IPV4_FROM_TUNE):
 
 * ![](doc/images/domoticz/sensors.png)
 
-* Map:
+* Map: ![](doc/images/domoticz/map.png)
 
-* ![](doc/images/domoticz/map.png)
+* Graph: ![](doc/images/domoticz/graph.png)
 
 
 Hardware:
