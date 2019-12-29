@@ -326,7 +326,7 @@ function RequestStatus(){var canvas,v,ret,req=new XMLHttpRequest();\n\
    var ctx=canvas.getContext('2d');\n\
    canvas.width=300;ctx.font='35px Comic Sans MS';ctx.fillStyle='white';ctx.textAlign='center';\n\
    ctx.fillText(v+' m3', canvas.width/3, canvas.height/1.5);\n\
-   document.getElementById('counterName').value=v;\n\
+   document.getElementById('counterValue').value=v;\n\
 }}}\n\
 function showHelp(){");
       if(!authorizedIP())
