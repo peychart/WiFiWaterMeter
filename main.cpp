@@ -307,7 +307,7 @@ var odometer;\n\
 this.timer=0;\n\
 function init(){try{odometer=new steelseries.Odometer('canvasOdometer', {'decimals':3});}catch(e){;};refresh(1);}\n\
 function refresh(v=");
-    WEB_S(String(REFRESH_PERIOD, DEC));
+    WEB_S(String(WEB_REFRESH_PERIOD, DEC));
     WEB_F("){var e=document.getElementById('about');\n\
  clearTimeout(this.timer);if(e)e.style.display='none';\n\
  if(v>0)this.timer=setTimeout(function(){RequestStatus();refresh();},v*1000);\n\
@@ -326,6 +326,7 @@ function RequestStatus(){var canvas,v,ret,req=new XMLHttpRequest();\n\
    var ctx=canvas.getContext('2d');\n\
    canvas.width=300;ctx.font='35px Comic Sans MS';ctx.fillStyle='white';ctx.textAlign='center';\n\
    ctx.fillText(v+' m3', canvas.width/3, canvas.height/1.5);\n\
+   document.getElementById('counterName').value=v;\n\
 }}}\n\
 function showHelp(){");
       if(!authorizedIP())
