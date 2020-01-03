@@ -250,9 +250,9 @@ As long as no SSID is set and it is not connected to a master, the device acts a
 <th id='label1' style='text-align:center;'><div style='display:inline-block;'>Counter Name</div><div style='display:none;'>Notification period</div></th>\n\
 <th id='label2' style='text-align:center;'><div style='display:inline-block;'>Deciliter per pulse</div><div style='display:none;'>");
 #ifdef MAXCONSUMPTIONTIME_MEASURE
-      WEB_F("Maximum consumption time");
+      WEB_F("Maximum consumption delay");
 #else
-      WEB_F("Minimum non-consumption time");
+      WEB_F("Minimum non-consumption delay");
 #endif
       WEB_F("</div></th>\n\
 <th id='label3' style='text-align:center;'><div style='display:inline-block;'>Initial value</div><div style='display:none;'>Leak msg</div></th>\n\
@@ -326,8 +326,8 @@ function RequestStatus(){var canvas,v,ret,req=new XMLHttpRequest();\n\
    var ctx=canvas.getContext('2d');\n\
    canvas.width=300;ctx.font='35px Comic Sans MS';ctx.fillStyle='white';ctx.textAlign='center';\n\
    ctx.fillText(v+' m3', canvas.width/3, canvas.height/1.5);\n\
-   document.getElementById('counterValue').value=v;\n\
-}}}\n\
+  }document.getElementById('counterValue').value=v;\n\
+}}\n\
 function showHelp(){");
       if(!authorizedIP())
         WEB_F("window.location.href='https://github.com/peychart/WiFiWaterMeter';}\n");
@@ -810,7 +810,7 @@ bool mqttNotify(ushort n){
           if(n) s+=String(leakStatus, DEC);
           else  s+=getCounter();
         }else if(!mqttNature[n][i]==1)
-              s+=leakMsg;                     //Warning-message
+              s+=leakMsg;                 //Warning-message
         else  s+=mqttValue[n][i];         //Constant
         if(mqttType[n][i]==0) s+= "\"";
       }if(s=="{"){
