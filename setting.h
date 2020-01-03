@@ -1,5 +1,7 @@
 //Ajust the following:
 
+//#define DEBUG
+
 #define VERSION                "1.0.1"              //Change first number to reset current config on the next boot...
 #define DEFAULTHOSTNAME        "ESP8266"
 #define DEFAULTWIFIPASS        "defaultPassword"
@@ -20,7 +22,7 @@
 #define COUNTERPIN              D5
 #define DEBOUNCE_DELAY          50UL                //(ms)
 #define MULTIPLIER              5UL                 //Deciliter per pulse...
-#define UNIT_DISPLAY            10L                 // 1L ->unit=Liter, 1000L->unit=m3 (API REST only)
+#define UNIT_DISPLAY            1000L               // 1L ->unit=Liter, 1000L->unit=m3 (API REST only)
 #define DELETEDATAFILE_DELAY    600000UL            //(ms)
 
 #define EXCLUDED_IPV4_FROM_TUNE 192,168,0,249       //Update requests from this (IP & MASK) (HAProxy server?) are prohibited...
@@ -39,5 +41,3 @@
 #define DEFAULT_MQTT_QUEUE     "domoticz/in"
 
 #define BACKGROUND_IMAGE       "https://static.mycity.travel/manage/uploads/7/36/12705/989bd67a1aad43055bd0322e9694f8dd8fab2b43_1080.jpg"
-
-//#define DEBUG
