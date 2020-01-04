@@ -323,8 +323,8 @@ function refreshDisplay(param){var s='No NTP sync',v=param.index[0];\n\
   var ctx=canvas.getContext('2d');\n\
   canvas.width=300;ctx.font='35px Comic Sans MS';ctx.fillStyle='white';ctx.textAlign='center';\n\
   ctx.fillText(v+' m3', canvas.width/3, canvas.height/1.5);\n\
-}document.getElementById('counterValue').value=v;document.getElementById('version').innerHTML=param.version;\n\
- refreshUptime(Math.round(param.uptime/1000));\n\
+ }if((s=document.getElementById('counterValue')))s.value=v;\n\
+ document.getElementById('version').innerHTML=param.version;refreshUptime(Math.round(param.uptime/1000));\n\
  document.getElementById('leakStatusOk').style='display:'+(!param.leakStatus ?'inline-block;' :'none');\n\
  document.getElementById('leakStatusFail').style='display:'+(param.leakStatus ?'inline-block;' :'none');\n\
 }\n\
@@ -332,8 +332,8 @@ function showHelp(){");
   if(!authorizedIP())
     WEB_F("window.location.href='https://github.com/peychart/WiFiWaterMeter';}\n");
   else{
-    WEB_F("refresh(120);document.getElementById('about').style.display='block';}\n\
-function saveSSID(e){var f,s;\n\
+    WEB_F("refresh(120);document.getElementById('about').style.display='block';}\n");
+  WEB_F("function saveSSID(e){var f,s;\n\
  for(f=e;f.tagName!='FORM';)f=f.parentNode;\n\
  if((s=f.querySelectorAll('input[type=text]')).length && s[0]==''){alert('Empty SSID...');f.reset();s.focus();}\n\
  else{var p=f.querySelectorAll('input[type=password]');\n\
@@ -1023,11 +1023,11 @@ void setup(){
   ESPWebServer.on("/",                 [](){handleRoot(); ESPWebServer.client().stop();});
   ESPWebServer.on("/status",           [](){setIndex();   ESPWebServer.send(200, "text/plain", getStatus());});
   ESPWebServer.on("/getCurrentIndex",  [](){setIndex();   ESPWebServer.send(200, "text/plain", "[" + String(now(), DEC) + "," + getCounter() + "]");});
-  ESPWebServer.on("/getData",          [](){if(authorizedIP()){getHistoric();          }else ESPWebServer.send(403, "text/plain", "403: access denied");});
-  ESPWebServer.on("/getCurrentRecords",[](){if(authorizedIP()){getDayRecords();        }else ESPWebServer.send(403, "text/plain", "403: access denied");});
-  ESPWebServer.on("/resetHistoric",    [](){if(authorizedIP()){deleteDataFile();       }else ESPWebServer.send(403, "text/plain", "403: access denied");});
-  ESPWebServer.on("/modemSleepAllowed",[](){if(authorizedIP()){lightSleepAllowed=true; }else ESPWebServer.send(403, "text/plain", "403: access denied");});
-  ESPWebServer.on("/modemSleepDenied", [](){if(authorizedIP()){lightSleepAllowed=false;}else ESPWebServer.send(403, "text/plain", "403: access denied");});
+  ESPWebServer.on("/getData",          [](){if(authorizedIP()){getHistoric();          ESPWebServer.send(200, "text/plain", "Ok");}else ESPWebServer.send(403, "text/plain", "403: access denied");});
+  ESPWebServer.on("/getCurrentRecords",[](){if(authorizedIP()){getDayRecords();        ESPWebServer.send(200, "text/plain", "Ok");}else ESPWebServer.send(403, "text/plain", "403: access denied");});
+  ESPWebServer.on("/resetHistoric",    [](){if(authorizedIP()){deleteDataFile();       ESPWebServer.send(200, "text/plain", "Ok");}else ESPWebServer.send(403, "text/plain", "403: access denied");});
+  ESPWebServer.on("/modemSleepAllowed",[](){if(authorizedIP()){lightSleepAllowed=true; ESPWebServer.send(200, "text/plain", "Ok");}else ESPWebServer.send(403, "text/plain", "403: access denied");});
+  ESPWebServer.on("/modemSleepDenied", [](){if(authorizedIP()){lightSleepAllowed=false;ESPWebServer.send(200, "text/plain", "Ok");}else ESPWebServer.send(403, "text/plain", "403: access denied");});
   ESPWebServer.on("/restart",          [](){if(authorizedIP()){reboot();               }else ESPWebServer.send(403, "text/plain", "403: access denied");});
 //ESPWebServer.on("/about",            [](){ ESPWebServer.send(200, "text/plain", getHelp()); });
   ESPWebServer.onNotFound(             [](){ESPWebServer.send(404, "text/plain", "404: Not found");});
