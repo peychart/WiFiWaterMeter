@@ -8,7 +8,7 @@
 #define WIFISTADELAYRETRY       30000UL
 #define MAXWIFIRETRY            2
 #define WIFIAPDELAYRETRY        300000UL
-#define MEMORYLEAKS             10000L
+#define MEMORYLEAKS             5000L
 #define SSIDCount()             3
 #define WEB_REFRESH_PERIOD      20                  //(s)
 
