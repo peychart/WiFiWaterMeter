@@ -980,7 +980,7 @@ void leakChecker(){
     mqttNotifyWarning();
     next_leakDetected=millis() + leakNotifPeriod;
   }if(isNow(next_leakCheck)){           // Minimal fixing time reached...
-    if(leakStatus <= MAXLEAKDETECT) leakStatus++;
+    if(leakStatus < MAXLEAKDETECT) leakStatus++;
     mqttNotifyWarning();
     next_leakDetected=millis() + leakNotifPeriod;
     next_leakCheck=millis() + maxConsumTime;
@@ -994,7 +994,7 @@ void leakChecker(){
     next_leakDetected=millis() + leakNotifPeriod;
     next_leakCheck=millis() + maxConsumTime;
   }else if(isNow(next_leakDetected)){  // ...in control period.
-    if(leakStatus <= MAXLEAKDETECT) leakStatus++;
+    if(leakStatus < MAXLEAKDETECT) leakStatus++;
     DEBUG_print("Leak notification!...\n");
     mqttNotifyWarning();
     next_leakDetected=millis() + leakNotifPeriod;
