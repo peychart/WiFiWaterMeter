@@ -1023,8 +1023,8 @@ void setup(){
   ESPWebServer.on("/",                 [](){handleRoot(); ESPWebServer.client().stop();});
   ESPWebServer.on("/status",           [](){setIndex();   ESPWebServer.send(200, "text/plain", getStatus());});
   ESPWebServer.on("/getCurrentIndex",  [](){setIndex();   ESPWebServer.send(200, "text/plain", "[" + String(now(), DEC) + "," + getM3Counter() + "]");});
-  ESPWebServer.on("/getData",          [](){if(authorizedIP()){getHistoric();          ESPWebServer.send(200, "text/plain", "Ok");}else ESPWebServer.send(403, "text/plain", "403: access denied");});
-  ESPWebServer.on("/getCurrentRecords",[](){if(authorizedIP()){getDayRecords();        ESPWebServer.send(200, "text/plain", "Ok");}else ESPWebServer.send(403, "text/plain", "403: access denied");});
+  ESPWebServer.on("/getData",          [](){if(authorizedIP()){getHistoric();          }else ESPWebServer.send(403, "text/plain", "403: access denied");});
+  ESPWebServer.on("/getCurrentRecords",[](){if(authorizedIP()){getDayRecords();        }else ESPWebServer.send(403, "text/plain", "403: access denied");});
   ESPWebServer.on("/resetHistoric",    [](){if(authorizedIP()){deleteDataFile();       ESPWebServer.send(200, "text/plain", "Ok");}else ESPWebServer.send(403, "text/plain", "403: access denied");});
   ESPWebServer.on("/modemSleepAllowed",[](){if(authorizedIP()){lightSleepAllowed=true; ESPWebServer.send(200, "text/plain", "Ok");}else ESPWebServer.send(403, "text/plain", "403: access denied");});
   ESPWebServer.on("/modemSleepDenied", [](){if(authorizedIP()){lightSleepAllowed=false;ESPWebServer.send(200, "text/plain", "Ok");}else ESPWebServer.send(403, "text/plain", "403: access denied");});
