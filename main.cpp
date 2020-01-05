@@ -26,7 +26,7 @@ String                                ssid[SSIDCount()];            //Identifian
 String                                password[SSIDCount()];        //Mots de passe WiFi /Wifi passwords
 String                                counterName(DEFAULTHOSTNAME), leakMsg(WATERLEAK_MESSAGE), ntpServer(DEFAULTNTPSERVER);
 short                                 localTimeZone(DEFAULTTIMEZONE);
-ulong                                 counterValue(0UL), multiplier(MULTIPLIER);
+ulong                                 counterDlValue(0UL), pulseValue(PULSE_VALUE);
 bool                                  WiFiAP(false), daylight(DEFAULTDAYLIGHT), lightSleepAllowed(false);
 #ifdef DEFAULTWIFIPASS
   ushort                              nbWifiAttempts(MAXWIFIRETRY), WifiAPTimeout;
@@ -41,6 +41,7 @@ ulong                                 next_reconnect(0UL),
                                       leakNotifPeriod(MIN_LEAKNOTIF_PERIOD), maxConsumTime(MIN_MAXCONSUM_TIME),
                                       awakeTime(max(AWAKETIME, 600UL)*1000UL), next_lightSleep(0L);
 ushort                                leakStatus(0);
+const ushort                          UnitDisplay=min(1000L,max(UNIT_DISPLAY,1L));
 volatile bool                         intr(false);
 std::map<ulong,ulong>                 dailyData;
 
@@ -79,9 +80,9 @@ bool readConfig(bool=true);
 void writeConfig();
 ulong time(bool=false);
 
-inline bool   isNow(ulong v)                    {ulong ms(millis()); return((v<ms) && (ms-v)<INFINY);}  //Because of millis() rollover:
-inline bool   isTimeSynchronized(ulong t=now()) {return(t>-1UL/10UL);}
-inline String getCounter(ulong c=counterValue)  {return String(c/(UNIT_DISPLAY*10.0), 1+log10(UNIT_DISPLAY));}
+inline bool   isNow(ulong v)                      {ulong ms(millis()); return((v<ms) && (ms-v)<INFINY);}  //Because of millis() rollover:
+inline bool   isTimeSynchronized(ulong t=now())   {return(t>-1UL/10UL);}
+inline String getM3Counter(ulong c=counterDlValue){return String(c*UnitDisplay/10000.0, 3-log(UnitDisplay));}
 
 bool addMQTT(ushort i, ushort j){
   bool isNew(false);
@@ -255,11 +256,11 @@ As long as no SSID is set and it is not connected to a master, the device acts a
     WEB_F("</div><div style='display:none;'>");
     sendHTML_inputNumber(F("leakNotifPeriod"), String(leakNotifPeriod/3600000L, DEC), "min=" + String(MIN_LEAKNOTIF_PERIOD/3600000L, DEC) + " max=" + String(MAX_LEAKNOTIF_PERIOD/3600000L, DEC) + " style='width:50px;text-align:right;'");
     WEB_F("h</div></td>\n<td id='param2' align=center><div style='display:inline-block;'>");
-    sendHTML_inputNumber(F("multiplier"), String(multiplier, DEC), F("min=1 max=100 style='width:50px;text-align:right;'"));
+    sendHTML_inputNumber(F("pulseValue"), String(pulseValue, DEC), F("min=1 max=100 style='width:50px;text-align:right;'"));
     WEB_F("dl/pulse</div><div style='display:none;'>");
     sendHTML_inputNumber(F("maxConsumTime"), String(maxConsumTime/60000L, DEC), "min=" + String(MIN_MAXCONSUM_TIME/60000L, DEC) + " max=" + String(MAX_MAXCONSUM_TIME/60000L, DEC) + " style='width:50px;text-align:right;'");
     WEB_F("mn</div></td>\n<td id='param3' align=center><div style='display:inline-block;'>");
-    sendHTML_inputNumber(F("counterValue"), String(counterValue/10.0, 1), F("min=0 max=999999999.9 style='width:85px;text-align:right;'"));
+    sendHTML_inputNumber(F("counterValue"), String(counterDlValue/10.0, 1), F("min=0 max=999999999.9 style='width:85px;text-align:right;'"));
     WEB_F("liters</div><div style='display:none;'>");
     sendHTML_inputText(F("leakMsg"), leakMsg, F("style='width:210px;'"));
     WEB_F("</div></td></tr>\n</table>\n");
@@ -316,14 +317,14 @@ function refreshUptime(sec){var e=document.getElementById('uptime');\n\
 function refreshDisplay(param){var s='No NTP sync',v=param.index[0];\n\
  if(v>946684800){s=(new Date(v*1000)).toISOString();s=s.substring(0,s.indexOf('T')).split('-').join('/');}\n\
  document.getElementById('date').innerHTML=s + '&nbsp;-&nbsp;';\n\
- canvas=document.getElementById('canvasOdometer');v=param.index[1]/1000.0*");
-  WEB_S(String(UNIT_DISPLAY*1.0, 1));
+ canvas=document.getElementById('canvasOdometer');v=param.index[1]*");
+  WEB_S(String(UnitDisplay*1.0, 1));
   WEB_F(";\n\
  canvas.innerHTML=v+' m3';if(odometer!==undefined)odometer.setValue(v);else{\n\
   var ctx=canvas.getContext('2d');\n\
   canvas.width=300;ctx.font='35px Comic Sans MS';ctx.fillStyle='white';ctx.textAlign='center';\n\
   ctx.fillText(v+' m3', canvas.width/3, canvas.height/1.5);\n\
- }if((s=document.getElementById('counterValue')))s.value=v;\n\
+}if((s=document.getElementById('counterValue')))s.value=param.counterLiterValue;\n\
  document.getElementById('version').innerHTML=param.version;refreshUptime(Math.round(param.uptime/1000));\n\
  document.getElementById('leakStatusOk').style='display:'+(!param.leakStatus ?'inline-block;' :'none');\n\
  document.getElementById('leakStatusFail').style='display:'+(param.leakStatus ?'inline-block;' :'none');\n\
@@ -392,7 +393,7 @@ function mqttRawAdd(){var t;for(t=document.getElementById('mqttPlus');t.tagName!
 }\n\
 function checkConfPopup(){var r;\n\
  if(document.getElementById('counterName').value==='')return false;\n\
- if(document.getElementById('multiplier').value==='')return false;\n\
+ if(document.getElementById('pulseValue').value==='')return false;\n\
  if(document.getElementById('counterValue').value==='')return false;\n\
  if(document.getElementById('leakNotifPeriod').value==='')return false;\n\
  if(document.getElementById('maxConsumTime').value==='')return false;\n\
@@ -464,12 +465,10 @@ void sendBlankHTML(){
 void shiftSSID(){
   for(ushort i(0); i<SSIDCount(); i++){
     if(!ssid[i].length() || !password[i].length()) ssid[i]=password[i]="";
-    if(!ssid[i].length()) for(ushort j(i+1); j<SSIDCount(); j++)
-      if(ssid[j].length() && password[j].length()){
-        ssid[i]=ssid[j]; password[i]=password[j]; password[j]="";
-        break;
-      }else j++;
-} }
+    for(ushort n(SSIDCount()-i-1);!ssid[i].length() && n; n--){
+      for(ushort j(i+1); j<SSIDCount(); j++){
+        ssid[i]=ssid[j]; password[i]=password[j]; ssid[j]="";
+} } } }
 
 void writeConfig(){                                     //Save current config:
   if(!readConfig(false))
@@ -486,8 +485,8 @@ void writeConfig(){                                     //Save current config:
       f.println(ssid[i]);
       f.println(password[i]);
     }f.println(counterName);
-    f.println(counterValue);
-    f.println(multiplier);
+    f.println(counterDlValue);
+    f.println(pulseValue);
     f.println(leakNotifPeriod);
     f.println(maxConsumTime);
     f.println(leakStatus);
@@ -551,8 +550,8 @@ bool readConfig(bool w){                                //Get config (return fal
     isNew|=getConf(ssid[i], f, w);
     isNew|=getConf(password[i], f, w);
   }isNew|=getConf(counterName, f, w);
-  isNew|=getConf(counterValue, f, w);
-  isNew|=getConf(multiplier, f, w);
+  isNew|=getConf(counterDlValue, f, w);
+  isNew|=getConf(pulseValue, f, w);
   isNew|=getConf(leakNotifPeriod, f, w);
   isNew|=getConf(maxConsumTime, f, w);
   isNew|=getConf(leakStatus, f, w);
@@ -717,10 +716,11 @@ template<typename T> String getConfig(String n, T v)        {return "\""+n+"\":"
 template<> String getConfig(String s, String v)             {return "\""+s+"\":\""+String(v)+"\",";}
 String getStatus(){
   String s('{');
-  s+=getConfig("version",    String(VERSION));
-  s+=getConfig("uptime",     millis());
-  s+=getConfig("index",      "[" + String(now(), DEC) + "," + getCounter() + "]");
-  s+=getConfig("leakStatus", leakStatus);
+  s+=getConfig("version",           String(VERSION));
+  s+=getConfig("uptime",            millis());
+  s+=getConfig("index",             "[" + String(now(), DEC) + "," + getM3Counter() + "]");
+  s+=getConfig("counterLiterValue", String(counterDlValue/10.0,1));
+  s+=getConfig("leakStatus",        leakStatus);
   s[s.length()-1]='}';
   return s;
 }
@@ -751,20 +751,20 @@ inline void check_leakNotifPeriod(){
   maxConsumTime=min(maxConsumTime, MAX_MAXCONSUM_TIME);
   maxConsumTime=max(maxConsumTime, MIN_MAXCONSUM_TIME);
 }bool handleSubmitMQTTConf(ushort n){
-  bool isNew(false); String count(counterValue/10.0, 1);
-  setMQTT_S("counterName",     counterName    );
-  setMQTT_S("counterValue",    count          ); counterValue=(ulong)(atof(count.c_str())*10.0);
-  setMQTT_N("multiplier",      multiplier     );
-  setMQTT_N("leakNotifPeriod", leakNotifPeriod); check_leakNotifPeriod();
-  setMQTT_N("maxConsumTime",   maxConsumTime  ); check_maxConsumTime();
-  setMQTT_S("leakMsg",         leakMsg        );
+  bool isNew(false); String count(counterDlValue/10.0, 1);
+  setMQTT_S("counterName",       counterName    );
+  setMQTT_S("counterValue",      count          ); counterDlValue=(ulong)(atof(count.c_str())*10.0);
+  setMQTT_N("pulseValue",        pulseValue     );
+  setMQTT_N("leakNotifPeriod",   leakNotifPeriod); check_leakNotifPeriod();
+  setMQTT_N("maxConsumTime",     maxConsumTime  ); check_maxConsumTime();
+  setMQTT_S("leakMsg",           leakMsg        );
   if((mqttEnable[n]=ESPWebServer.hasArg("mqttEnable"))){ushort i;
-    if(mqttClient.connected()) mqttClient.disconnect();
-    setMQTT_S("mqttBroker",    mqttBroker);
-    setMQTT_N("mqttPort",      mqttPort  );
-    setMQTT_S("mqttIdent",     mqttIdent );
-    setMQTT_S("mqttUser",      mqttUser  );
-    setMQTT_S("mqttPwd",       mqttPwd   );
+    if(mqttClient.connected())   mqttClient.disconnect();
+    setMQTT_S("mqttBroker",      mqttBroker);
+    setMQTT_N("mqttPort",        mqttPort  );
+    setMQTT_S("mqttIdent",       mqttIdent );
+    setMQTT_S("mqttUser",        mqttUser  );
+    setMQTT_S("mqttPwd",         mqttPwd   );
     for(i=0; ESPWebServer.hasArg("mqttFieldName"+String(i,DEC)); i++){
       isNew|=addMQTT(n, i);
       setMQTT_S("mqttFieldName"+String(i,DEC), mqttFieldName[n][i]);
@@ -797,7 +797,7 @@ void  handleRoot(){ bool w, blankPage=false;
   }else if((w|=ESPWebServer.hasArg("password"))){                                             //set WiFi connections
     handleSubmitSSIDConf(); shiftSSID();
     if(WiFiAP && ssid[0].length()) WiFiConnect();
-  }else if(ESPWebServer.hasArg("plugNum")){                                                   //set counter name
+  }else if(ESPWebServer.hasArg("plugNum")){                                                   //set counter parameters
     w|=handleSubmitMQTTConf(atoi(ESPWebServer.arg("plugNum").c_str()));
   }if(w) writeConfig();
   if(blankPage)
@@ -811,7 +811,7 @@ void setIndex(){
   if ((v=ESPWebServer.arg(v))!=""){
     float val(atof(v.c_str()));
     if(val){
-      counterValue=val*UNIT_DISPLAY;
+      counterDlValue=val*1000L*UnitDisplay;
       DEBUG_print("HTTP request on counter(" + counterName + ") value: " + String(val, DEC) + "...\n");
 } } }
 
@@ -829,7 +829,7 @@ bool mqttNotify(ushort n){
         if(mqttType[n][i]==0) s+= "\"";   //type "String"
         if(mqttNature[n][i]==0){          //Counter-value or Warning-level
           if(n) s+=String(leakStatus, DEC);
-          else  s+=getCounter();
+          else  s+=getM3Counter();
         }else if(!mqttNature[n][i]==1)
               s+=leakMsg;                 //Warning-message
         else  s+=mqttValue[n][i];         //Constant
@@ -852,7 +852,7 @@ void getData(std::map<ulong,ulong>& d){
     ESPWebServer.sendContent("\n  [");
     ESPWebServer.sendContent(String(it->first, DEC));
     ESPWebServer.sendContent(",");
-    ESPWebServer.sendContent(getCounter(it->second));
+    ESPWebServer.sendContent(getM3Counter(it->second));
     ESPWebServer.sendContent("]");
     if((++it)!=dailyData.end())
       ESPWebServer.sendContent(",");
@@ -866,7 +866,7 @@ DEBUG_print("Open: "); DEBUG_print(fileName); DEBUG_print("\n");
       ESPWebServer.sendContent("\n  [");
       ESPWebServer.sendContent(s.substring(0,s.indexOf(",")));
       ESPWebServer.sendContent(",");
-      ESPWebServer.sendContent(getCounter((ulong)atol(s.substring(s.indexOf(",")+1).c_str())));
+      ESPWebServer.sendContent(getM3Counter((ulong)atol(s.substring(s.indexOf(",")+1).c_str())));
       ESPWebServer.sendContent("]");
       if((s=readString(f)).length())
         ESPWebServer.sendContent(",");
@@ -941,12 +941,12 @@ void dataFileWrite(){
 } } }
 
 void pushData(){   // Each hour...
-  static ulong previousValue=counterValue, next_pushData=PUSHDATA_DELAY*1000UL;
+  static ulong previousValue=counterDlValue, next_pushData=PUSHDATA_DELAY*1000UL;
   if(isNow(next_pushData)){
     ulong sec(now());
     DEBUG_print("Look for pushing data...\n");
-    if((sec-=currentHour(sec))<PUSHDATA_DELAY*2L && previousValue!=counterValue){ //Only on changed value...
-      dailyData[currentHour(now())]=previousValue=counterValue;
+    if((sec-=currentHour(sec))<PUSHDATA_DELAY*2L && previousValue!=counterDlValue){ //Only on changed value...
+      dailyData[currentHour(now())]=previousValue=counterDlValue;
       DEBUG_print("Data pushed.\n");
       if(isTimeSynchronized()){
         mqttNotifyIndex();
@@ -966,8 +966,8 @@ void interruptTreatment(){
   if(intr){
     delay(DEBOUNCE_DELAY);
     if(!digitalRead(COUNTERPIN)){ //Counter++ on falling pin...
-      counterValue+=multiplier;
-      DEBUG_print("Counter: " + String(counterValue, DEC) + "\n");
+      counterDlValue+=pulseValue;
+      DEBUG_print("Counter: " + String(counterLiterValue, DEC) + "\n");
       next_leakCheck=millis() + maxConsumTime;
       intr=false;
 } } }
@@ -1022,7 +1022,7 @@ void setup(){
   //Definition des URLs d'entree /Input URL definitions
   ESPWebServer.on("/",                 [](){handleRoot(); ESPWebServer.client().stop();});
   ESPWebServer.on("/status",           [](){setIndex();   ESPWebServer.send(200, "text/plain", getStatus());});
-  ESPWebServer.on("/getCurrentIndex",  [](){setIndex();   ESPWebServer.send(200, "text/plain", "[" + String(now(), DEC) + "," + getCounter() + "]");});
+  ESPWebServer.on("/getCurrentIndex",  [](){setIndex();   ESPWebServer.send(200, "text/plain", "[" + String(now(), DEC) + "," + getM3Counter() + "]");});
   ESPWebServer.on("/getData",          [](){if(authorizedIP()){getHistoric();          ESPWebServer.send(200, "text/plain", "Ok");}else ESPWebServer.send(403, "text/plain", "403: access denied");});
   ESPWebServer.on("/getCurrentRecords",[](){if(authorizedIP()){getDayRecords();        ESPWebServer.send(200, "text/plain", "Ok");}else ESPWebServer.send(403, "text/plain", "403: access denied");});
   ESPWebServer.on("/resetHistoric",    [](){if(authorizedIP()){deleteDataFile();       ESPWebServer.send(200, "text/plain", "Ok");}else ESPWebServer.send(403, "text/plain", "403: access denied");});
