@@ -2,7 +2,7 @@
 
 //#define DEBUG
 
-#define VERSION                "1.0.1"              //Change first number to reset current config on the next boot...
+#define VERSION                "1.1.2"              //Change first number to reset current config on the next boot...
 #define DEFAULTHOSTNAME        "ESP8266"
 #define DEFAULTWIFIPASS        "defaultPassword"
 #define WIFISTADELAYRETRY       30000UL
@@ -13,19 +13,24 @@
 #define WEB_REFRESH_PERIOD      20                  //(s)
 
 #define DEFAULTTIMEZONE         -10
-#define DEFAULTNTPSERVER       "fr.pool.ntp.org"
+#define DEFAULTNTPSERVER       "pool.ntp.org"
+#define NTP_UPDATE_INTERVAL_MS  1800                //(s)
 #define DEFAULTDAYLIGHT         false
-#define NTP_INTERVAL            3600                //(s)
+TimeChangeRule dstRule = {"CEST", Last, Sun, Mar, 1, (DEFAULTTIMEZONE - 1) * 60};
+TimeChangeRule stdRule = {"CET",  Last, Sun, Oct, 1,  DEFAULTTIMEZONE * 60};
 
-#define AWAKETIME               600UL               //(s) Before next deep sleep...
-
+#define MEASUREMENT_INTERVAL    3600UL              //(s) index reading interval
+#define AWAKEDELAY              MINIMUM_DELAY       //can be set in (s) : Delay before deep sleep after each measuremen...
+                                                    //Allow WEB access when sleep option on,
+                                                    // each http request renews the time (nota: the WEB interface refreshes every WEB_REFRESH_PERIOD s).
 #define COUNTERPIN              D5
 #define DEBOUNCE_DELAY          50UL                //(ms)
 #define PULSE_VALUE             10UL                //Deciliter per pulse...
 #define UNIT_DISPLAY            1L                  // 1L ->unit=m3, 1000L->unit=l (API REST only)
+#define KEEP_HISTORY            true                // keep measurements on SD
 #define DELETEDATAFILE_DELAY    600000UL            //(ms)
 
-#define EXCLUDED_IPV4_FROM_TUNE 192,168,0,249       //Update requests from this (IP & MASK) (HAProxy server?) are prohibited...
+#define EXCLUDED_IPV4_FROM_TUNE 192,168,0,253       //Update requests from this (IP & MASK) (HAProxy server?) are prohibited...
 #define EXCLUDED_MASK_FROM_TUNE 255,255,255,255     //Mask to exclude prohibited IPs (warning: ',' not '.')
 
 //Default values (editable in the web interface):

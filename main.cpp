@@ -4,11 +4,15 @@
 // Licence: GNU v3
 #include <string.h>
 #include "FS.h"
+#include <LittleFS.h>
 #include <ESP8266WiFi.h>
 #include <ESP8266mDNS.h>
 #include <WiFiClient.h>
-#include <TimeLib.h>
-#include <NtpClientLib.h>
+//#include <TimeLib.h>
+//#include <NtpClientLib.h>
+#include <Timezone.h>
+#include <NTPClient.h>
+#include <WiFiUdp.h>
 #include <ESP8266WebServer.h>
 #include <ESP8266HTTPUpdateServer.h>
 #include <PubSubClient.h>
@@ -16,6 +20,7 @@
 #include <vector>
 #include <map>
 
+#define MINIMUM_DELAY                 120UL
 #include "setting.h"   //Can be adjusted according to the project...
 
 //Avoid to change the following:
@@ -26,20 +31,21 @@ String                                ssid[SSIDCount()];            //Identifian
 String                                password[SSIDCount()];        //Mots de passe WiFi /Wifi passwords
 String                                counterName(DEFAULTHOSTNAME), leakMsg(WATERLEAK_MESSAGE), ntpServer(DEFAULTNTPSERVER);
 short                                 localTimeZone(DEFAULTTIMEZONE);
-ulong                                 counterDlValue(0UL), pulseValue(PULSE_VALUE);
-bool                                  WiFiAP(false), daylight(DEFAULTDAYLIGHT), lightSleepAllowed(false);
+ulong                                 deciliterCounter(0UL), pulseValue(PULSE_VALUE);
+bool                                  WiFiAP(false), daylight(DEFAULTDAYLIGHT);
 #ifdef DEFAULTWIFIPASS
-  ushort                              nbWifiAttempts(MAXWIFIRETRY), WifiAPTimeout;
+  ushort                              nbWifiAttempts(MAXWIFIRETRY), WifiAPTimeout(0);
 #endif
 #define MIN_LEAKNOTIF_PERIOD          3600000UL
 #define MAX_LEAKNOTIF_PERIOD          25200000UL
-#define MIN_MAXCONSUM_TIME            60000UL
+#define MIN_MAXCONSUM_TIME            300000UL
 #define MAX_MAXCONSUM_TIME            3600000UL
-#define PUSHDATA_DELAY                120UL
+#define PUSHDATA_DELAY_SEC            30UL
+#define MEASUREMENT_INTERVAL_SEC      max(300UL,MEASUREMENT_INTERVAL)
 ulong                                 next_reconnect(0UL),
                                       next_leakCheck(0UL), next_leakDetected(MIN_LEAKNOTIF_PERIOD),
                                       leakNotifPeriod(MIN_LEAKNOTIF_PERIOD), maxConsumTime(MIN_MAXCONSUM_TIME),
-                                      awakeTime(max(AWAKETIME, 600UL)*1000UL), next_lightSleep(0L);
+                                      awakeDelay(max(AWAKEDELAY, MINIMUM_DELAY) * 1000UL);
 ushort                                leakStatus(0);
 const ushort                          UnitDisplay=min(1000L,max(UNIT_DISPLAY,1L));
 volatile bool                         intr(false);
@@ -55,6 +61,10 @@ ushort                                mqttPort;
 std::vector<std::vector<String>>      mqttFieldName, mqttValue;
 std::vector<std::vector<ushort>>      mqttNature, mqttType;
 std::vector<ushort>                   mqttEnable(0);
+
+WiFiUDP ntpUDP;
+NTPClient timeClient(ntpUDP);
+Timezone *myTZ;
 
 #define Serial_print(m)              {if(Serial) Serial.print(m);}
 #define Serial_printf(m,n)           {if(Serial) Serial.printf(m,n);}
@@ -80,9 +90,20 @@ bool readConfig(bool=true);
 void writeConfig();
 ulong time(bool=false);
 
-inline bool   isNow(ulong v)                      {ulong ms(millis()); return((v<ms) && (ms-v)<INFINY);}  //Because of millis() rollover:
-inline bool   isTimeSynchronized(ulong t=now())   {return(t>-1UL/10UL);}
-inline String getM3Counter(ulong c=counterDlValue){return String(c*UnitDisplay/10000.0, 3-log(UnitDisplay));}
+inline bool   isNow(ulong v) {ulong ms(millis()); return((v<ms) && (ms-v)<INFINY);}  //Because of millis() rollover:
+inline String getM3Counter(ulong c=deciliterCounter){return String(c*UnitDisplay/10000.0, 3-log(UnitDisplay));}
+inline ulong  Now() {return( timeClient.isTimeSet() ?myTZ->toLocal(timeClient.getEpochTime()) :(millis()/1000UL) );}
+inline bool   isSynchronizedTime(ulong t) {return(t>-1UL/10UL);}
+inline ulong  currentTimeIntervalSec(const ulong& h=Now()) {return( (h/MEASUREMENT_INTERVAL_SEC)*MEASUREMENT_INTERVAL_SEC );}
+
+void unsetConnectionStandby();
+
+bool isLightSleepAllowed(unsigned char b=0) {
+  static bool lightSleepAllowed(false);
+  if(b--) lightSleepAllowed = b;
+  return lightSleepAllowed;
+}inline void setLightSleep()   {isLightSleepAllowed(2); unsetConnectionStandby();}
+ inline void unsetLightSleep() {isLightSleepAllowed(1); unsetConnectionStandby();}
 
 bool addMQTT(ushort i, ushort j){
   bool isNew(false);
@@ -181,7 +202,7 @@ As long as no SSID is set and it is not connected to a master, the device acts a
     WEB_F("&nbsp;&nbsp;"); sendHTML_checkbox(F("daylight"), daylight, ""); WEB_F("&nbsp;&nbsp;");
     sendHTML_button("", F("Submit"), F("onclick='submit();'"));
     WEB_F("</form>\n</td><td style='text-align:center;'>\n<form method='POST'>");
-    sendHTML_checkbox("lightSleepAllowed", lightSleepAllowed, F("onclick='lightSleepAllowed();'")); sendHTML_checkbox("lightSleep", true, F("style='display:none;'"));
+    sendHTML_checkbox("lightSleepAllowed", isLightSleepAllowed(), F("onclick='lightSleepAllowed();'")); sendHTML_checkbox("lightSleep", true, F("style='display:none;'"));
     WEB_F("</form>\n</td><td style='text-align:center;'>\n<form method='POST'>");
     sendHTML_button(F("restart"), F("Save Data"), F("onclick='submit();'")); sendHTML_checkbox("reboot", true, "style='display:none;'");
     WEB_F("</form>\n</td></tr></table>\n<br><h3>Network connection [");
@@ -260,7 +281,7 @@ As long as no SSID is set and it is not connected to a master, the device acts a
     WEB_F("dl/pulse</div><div style='display:none;'>");
     sendHTML_inputNumber(F("maxConsumTime"), String(maxConsumTime/60000L, DEC), "min=" + String(MIN_MAXCONSUM_TIME/60000L, DEC) + " max=" + String(MAX_MAXCONSUM_TIME/60000L, DEC) + " style='width:50px;text-align:right;'");
     WEB_F("mn</div></td>\n<td id='param3' align=center><div style='display:inline-block;'>");
-    sendHTML_inputNumber(F("counterValue"), String(counterDlValue/10.0, 1), F("min=0 max=999999999.9 style='width:85px;text-align:right;'"));
+    sendHTML_inputNumber(F("counterValue"), String(deciliterCounter/10.0, 1), F("min=0 max=999999999.9 style='width:85px;text-align:right;'"));
     WEB_F("liters</div><div style='display:none;'>");
     sendHTML_inputText(F("leakMsg"), leakMsg, F("style='width:210px;'"));
     WEB_F("</div></td></tr>\n</table>\n");
@@ -473,11 +494,11 @@ void shiftSSID(){
 void writeConfig(){                                     //Save current config:
   if(!readConfig(false))
     return;
-  if( !SPIFFS.begin() ){
-    DEBUG_print("Cannot open SPIFFS!...\n");
+  if( !LittleFS.begin() ){
+    DEBUG_print("Cannot open LittleFS!...\n");
     return;
-  }File f=SPIFFS.open("/config.txt", "w+");
-  DEBUG_print("Writing SPIFFS.\n");
+  }File f=LittleFS.open("/config.txt", "w+");
+  DEBUG_print("Writing LittleFS.\n");
   if(f){
     f.println(String(VERSION).substring(0, String(VERSION).indexOf(".")));
     f.println(hostname);                           //Save hostname
@@ -485,7 +506,7 @@ void writeConfig(){                                     //Save current config:
       f.println(ssid[i]);
       f.println(password[i]);
     }f.println(counterName);
-    f.println(counterDlValue);
+    f.println(deciliterCounter);
     f.println(pulseValue);
     f.println(leakNotifPeriod);
     f.println(maxConsumTime);
@@ -494,7 +515,7 @@ void writeConfig(){                                     //Save current config:
     f.println(ntpServer);
     f.println(localTimeZone);
     f.println(daylight);
-    f.println(lightSleepAllowed);
+    f.println(isLightSleepAllowed());
     f.println(dailyData.size());
     for (std::map<ulong,ulong>::const_iterator it=dailyData.begin(); it!=dailyData.end(); it++){
       f.println(it->first);
@@ -514,8 +535,8 @@ void writeConfig(){                                     //Save current config:
         f.println(mqttType[i][j]);
         f.println(mqttValue[i][j]);
     } }
-    f.close(); SPIFFS.end();
-    DEBUG_print("SPIFFS writed.\n");
+    f.close(); LittleFS.end();
+    DEBUG_print("LittleFS writed.\n");
 } }
 
 String readString(File f){ String ret=f.readStringUntil('\n'); ret.remove(ret.indexOf('\r')); return ret; }
@@ -528,10 +549,10 @@ inline bool getConf(short&  v, File& f, bool w=true){short  r(atoi(readString(f)
 inline bool getConf(ulong&  v, File& f, bool w=true){ulong  r((unsigned)atol(readString(f).c_str())); if(r==v) return false; if(w)v=r; return true;}
 bool readConfig(bool w){                                //Get config (return false if config is not modified):
   bool isNew(false);
-  if( !SPIFFS.begin() ){
-    DEBUG_print("Cannot open SPIFFS!...\n");
+  if( !LittleFS.begin() ){
+    DEBUG_print("Cannot open LittleFS!...\n");
     return false;
-  }File f(SPIFFS.open("/config.txt", "r"));
+  }File f(LittleFS.open("/config.txt", "r"));
   if(f && String(VERSION).substring(0, String(VERSION).indexOf("."))!=readString(f)){
     f.close();
     if(w) DEBUG_print("New configFile version...\n");
@@ -542,15 +563,15 @@ bool readConfig(bool w){                                //Get config (return fal
       mqttIdent=DEFAULT_MQTT_IDENT; mqttUser=DEFAULT_MQTT_USER; mqttPwd=DEFAULT_MQTT_PWD;
       mqttQueue=DEFAULT_MQTT_QUEUE;
 #endif
-      SPIFFS.format(); SPIFFS.end(); writeConfig();
-      DEBUG_print("SPIFFS initialized.\n");
+      LittleFS.format(); LittleFS.end(); writeConfig();
+      DEBUG_print("LittleFS initialized.\n");
     }return true;
   }isNew|=getConf(hostname, f, w);
   for(ushort i(0); i<SSIDCount(); i++){
     isNew|=getConf(ssid[i], f, w);
     isNew|=getConf(password[i], f, w);
   }isNew|=getConf(counterName, f, w);
-  isNew|=getConf(counterDlValue, f, w);
+  isNew|=getConf(deciliterCounter, f, w);
   isNew|=getConf(pulseValue, f, w);
   isNew|=getConf(leakNotifPeriod, f, w);
   isNew|=getConf(maxConsumTime, f, w);
@@ -559,7 +580,7 @@ bool readConfig(bool w){                                //Get config (return fal
   isNew|=getConf(ntpServer, f, w);
   isNew|=getConf(localTimeZone, f, w);
   isNew|=getConf(daylight, f, w);
-  isNew|=getConf(lightSleepAllowed, f, w);
+  {bool b(isLightSleepAllowed()); isNew|=getConf(b, f, w); if(b) setLightSleep(); else unsetLightSleep();}
   ushort n=dailyData.size();
   isNew|=getConf(n, f); dailyData.erase( dailyData.begin(), dailyData.end() );
   for(ushort i(0); (!isNew||w) && i<n; i++){
@@ -583,7 +604,7 @@ bool readConfig(bool w){                                //Get config (return fal
       isNew|=getConf(mqttType[i][j], f, w);
       isNew|=getConf(mqttValue[i][j], f, w);
   } }
-  f.close(); SPIFFS.end();
+  f.close(); LittleFS.end();
   if(w){
     DEBUG_print("Config restored.\n");
   }else{
@@ -610,14 +631,13 @@ bool WiFiHost(){
 }
 
 void WiFiDisconnect(ulong duration=0L){
-  next_reconnect=millis()+WIFISTADELAYRETRY;
+  next_reconnect=millis()+max(WIFISTADELAYRETRY, duration);
   if(WiFiAP || WIFI_STA_Connected())
     DEBUG_print("Wifi disconnected!...\n");
   WiFi.softAPdisconnect(); WiFi.disconnect(); WiFiAP=false;
   WiFi.mode(WIFI_OFF);
   if(duration){
     WiFi.forceSleepBegin(); delay(1L);
-    next_reconnect=millis()+duration;
 } }
 
 bool WiFiConnect(){
@@ -641,7 +661,7 @@ bool WiFiConnect(){
       nbWifiAttempts=MAXWIFIRETRY;
       //Affichage de l'adresse IP /print IP address:
       DEBUG_print("WiFi connected\n");
-      DEBUG_print("IP address: "); DEBUG_print(WiFi.localIP()); DEBUG_print(", dns: "); DEBUG_print(WiFi.dnsIP()); DEBUG_print("\n\n");
+      Serial_print("IP address: "); Serial_print(WiFi.localIP()); Serial_print(", dns: "); Serial_print(WiFi.dnsIP()); Serial_print("\n\n");
       return true;
     } WiFi.disconnect();
   }
@@ -668,8 +688,7 @@ inline void memoryTest(){
 }
 
 inline void onConnect(){
-  MDNS.begin(hostname.c_str());
-  MDNS.addService("http", "tcp", 80);
+
 #ifdef DEBUG
   if(!WiFiAP){
     telnetServer.begin();
@@ -678,12 +697,10 @@ inline void onConnect(){
 #endif
 }
 
-inline void ifConnected(){
+inline void ifConnected(){ // Every WIFISTADELAYRETRY
   MDNS.update();
-  if(!isTimeSynchronized()){
-    DEBUG_print("Retry NTP synchro...\n");
-    NTP.getTime();
-  }
+  timeClient.update();
+
 #ifdef DEBUG
   if(!WiFiAP){
     if(telnetServer.hasClient()){  //Telnet client connection:
@@ -698,16 +715,19 @@ inline void ifConnected(){
 #endif
 }
 
-void connectionTreatment(){                              //Test connexion/Check WiFi every mn:
+inline bool isConnected() {return(WiFiAP || WIFI_STA_Connected());}
+
+void connectionTreatment(){ //Test connexion/Check WiFi every mn:
   if(isNow(next_reconnect)){
     next_reconnect=millis()+WIFISTADELAYRETRY;
     memoryTest();
 
 #ifdef DEFAULTWIFIPASS
-    if( (!WiFiAP && !WIFI_STA_Connected()) || (WiFiAP && ssid[0].length() && !WifiAPTimeout--) ){
-      if(WiFiConnect())
-        onConnect();
-    }else ifConnected();
+    if( !isConnected() || (WiFiAP && ssid[0].length() && !WifiAPTimeout--) ){
+      if(WiFiConnect()){
+        onConnect();ifConnected();
+    } }
+    else ifConnected();
 #endif
 } }
 
@@ -751,9 +771,9 @@ inline void check_leakNotifPeriod(){
   maxConsumTime=min(maxConsumTime, MAX_MAXCONSUM_TIME);
   maxConsumTime=max(maxConsumTime, MIN_MAXCONSUM_TIME);
 }bool handleSubmitMQTTConf(ushort n){
-  bool isNew(false); String count(counterDlValue/10.0, 1);
+  bool isNew(false); String count(deciliterCounter/10.0, 1);
   setMQTT_S("counterName",       counterName    );
-  setMQTT_S("counterValue",      count          ); counterDlValue=(ulong)(atof(count.c_str())*10.0);
+  setMQTT_S("counterValue",      count          ); deciliterCounter=(ulong)(atof(count.c_str())*10.0);
   setMQTT_N("pulseValue",        pulseValue     );
   setMQTT_N("leakNotifPeriod",   leakNotifPeriod); check_leakNotifPeriod();
   setMQTT_N("maxConsumTime",     maxConsumTime  ); check_maxConsumTime();
@@ -791,7 +811,7 @@ void  handleRoot(){ bool w, blankPage=false;
     if((w|=(ESPWebServer.hasArg("daylight")!=daylight))) daylight=ESPWebServer.hasArg("daylight");
     reboot();
   }else if(ESPWebServer.hasArg("lightSleep")){                                                //set modem sleep
-    if((w|=(ESPWebServer.hasArg("lightSleepAllowed")!=lightSleepAllowed))) lightSleepAllowed=ESPWebServer.hasArg("lightSleepAllowed");
+    if((w|=(ESPWebServer.hasArg("lightSleepAllowed")!=isLightSleepAllowed()))) {if (ESPWebServer.hasArg("lightSleepAllowed")) setLightSleep(); else unsetLightSleep();}
   }else if(ESPWebServer.hasArg("reboot")){
     reboot();
   }else if((w|=ESPWebServer.hasArg("password"))){                                             //set WiFi connections
@@ -811,41 +831,59 @@ void setIndex(){
   if ((v=ESPWebServer.arg(v))!=""){
     float val(atof(v.c_str()));
     if(val){
-      counterDlValue=val*1000L*UnitDisplay;
+      deciliterCounter=val*1000L*UnitDisplay;
       DEBUG_print("HTTP request on counter(" + counterName + ") value: " + String(val, DEC) + "...\n");
 } } }
 
-bool mqttNotify(ushort n){
-  if(!mqttEnable[n]) return true;
-  if(mqttBroker.length()){
-    mqttClient.setServer(mqttBroker.c_str(), mqttPort);
-    if(!mqttClient.connected())
-      mqttClient.connect(mqttIdent.c_str(), mqttUser.c_str(), mqttPwd.c_str());
-    if(mqttClient.connected()){
-      String s="{";
-      for(ushort i(0); i<mqttEnable[n]; i++){
-        if(i) s+=",";
-        s+="\n \"" + mqttFieldName[n][i] + "\": ";
-        if(mqttType[n][i]==0) s+= "\"";   //type "String"
-        if(mqttNature[n][i]==0){          //Counter-value or Warning-level
-          if(n) s+=String(leakStatus, DEC);
-          else  s+=getM3Counter();
-        }else if(!mqttNature[n][i]==1)
-              s+=leakMsg;                 //Warning-message
-        else  s+=mqttValue[n][i];         //Constant
-        if(mqttType[n][i]==0) s+= "\"";
-      }if(s=="{"){
-        DEBUG_print("Nothing to published to \"" + mqttBroker + "\"!\n");
-        return false;
-      }s+="\n}\n";
-      mqttClient.publish(mqttQueue.c_str(), s.c_str());
-      DEBUG_print((n ?"Leak control message published to \"" :"Counter Value published to \"") + mqttBroker + "\".\n");
-      return true;
+void connectionStandby(bool set=false, ulong next=0L, ulong duration=0L){
+  static ulong next_disconnect(0L), next_WiFiAwakening(0L);
+  if(isLightSleepAllowed()) { // Can be invalidated before triggering with (duration<MINIMUM_DELAY) ...
+    if(set) {
+      next_disconnect = next;
+      if(duration) next_WiFiAwakening=( isNow(millis()-next_WiFiAwakening+MINIMUM_DELAY*1000UL) ?duration :0UL);
+    }else if( next_WiFiAwakening && isNow(next_disconnect) ) {
+      WiFiDisconnect( next_WiFiAwakening );
+      next_WiFiAwakening=0L;
   } }
-  DEBUG_print("MQTT server \"" + mqttBroker + ":" + String(mqttPort,DEC) + "\" not found...\n");
+}inline void setConnectionStandby(ulong next, ulong duration=0L) {connectionStandby(true, next, duration);}
+ inline void unsetConnectionStandby()                            {connectionStandby(true, 0L, millis());}
+ inline void awakenConnection()                                  {if(isLightSleepAllowed()) unsetConnectionStandby(); if(!isConnected()) {next_reconnect=millis(); connectionTreatment();}}
+
+bool mqttNotify(ushort n){
+  awakenConnection(); 
+  if(isConnected()){
+    if(!mqttEnable[n]) return true;
+    if(mqttBroker.length()){
+      mqttClient.setServer(mqttBroker.c_str(), mqttPort);
+      if(!mqttClient.connected())
+        mqttClient.connect(mqttIdent.c_str(), mqttUser.c_str(), mqttPwd.c_str());
+      if(mqttClient.connected()){
+        String s="{";
+        for(ushort i(0); i<mqttEnable[n]; i++){
+          if(i) s+=",";
+          s+="\n \"" + mqttFieldName[n][i] + "\": ";
+          if(mqttType[n][i]==0) s+= "\"";   //type "String"
+          if(mqttNature[n][i]==0){          //Counter-value or Warning-level
+            if(n) s+=String(leakStatus, DEC);
+            else  s+=String(deciliterCounter/10.0, 1);
+          }else if(mqttNature[n][i]!=1)
+                s+=leakMsg;                 //Warning-message
+          else  s+=mqttValue[n][i];         //Constant
+          if(mqttType[n][i]==0) s+= "\"";
+        }if(s=="{"){
+          DEBUG_print("Nothing to published to \"" + mqttBroker + "\"!\n");
+          return false;
+        }s+="\n}\n";
+        mqttClient.publish(mqttQueue.c_str(), s.c_str());
+        DEBUG_print((n ?"Leak control message published to \"" :"Counter Value published to \"") + mqttBroker + "\".\n");
+        return true;
+    } }
+    DEBUG_print("MQTT server \"" + mqttBroker + ":" + String(mqttPort,DEC) + "\" not found...\n");
+    return false;
+  }DEBUG_print("MQTT notification not enabled (not connected)...\n");
   return false;
-}inline bool mqttNotifyIndex  (void){return(mqttNotify(0));}  //Warning on possible leaks
-inline  bool mqttNotifyWarning(void){return(mqttNotify(1));}  //Volume notification
+}inline bool mqttNotifyIndex  (void) {return(mqttNotify(0));}  //Volume notification
+inline  bool mqttNotifyWarning(void) {return(mqttNotify(1));}  //Possible leak warning
 
 void getData(std::map<ulong,ulong>& d){
   for(std::map<ulong,ulong>::const_iterator it=dailyData.begin(); it!=dailyData.end(); ){
@@ -861,7 +899,7 @@ void getData(std::map<ulong,ulong>& d){
 void getData(String fileName){
   File f;
 DEBUG_print("Open: "); DEBUG_print(fileName); DEBUG_print("\n");
-  if(SPIFFS.begin() && (f=SPIFFS.open(fileName, "r"))){
+  if(LittleFS.begin() && (f=LittleFS.open(fileName, "r"))){
     for(String s=readString(f); s.length(); ){
       ESPWebServer.sendContent("\n  [");
       ESPWebServer.sendContent(s.substring(0,s.indexOf(",")));
@@ -871,7 +909,7 @@ DEBUG_print("Open: "); DEBUG_print(fileName); DEBUG_print("\n");
       if((s=readString(f)).length())
         ESPWebServer.sendContent(",");
     }f.close();
-  }SPIFFS.end();
+  }LittleFS.end();
 }
 
 void getData(bool current){
@@ -886,88 +924,92 @@ void getData(bool current){
   ESPWebServer.sendContent("\n ]\n}\n");
   ESPWebServer.sendContent("");
   ESPWebServer.client().stop();
-}void getHistoric()  {getData(true);}
+}void getHistory()   {getData(true);}
 void getDayRecords() {getData(false);}
 
-bool deleteSPIFFSDataFile(bool b){
+bool deleteLittleFSDataFile(bool b, bool force=false){
   static bool  deleteDataFile=false;
   static ulong next_canDeleteFileStorage;
-  if(b){
-    deleteDataFile=true;
+  if(b || force){
+    deleteDataFile=(force ?b :true);
     next_canDeleteFileStorage = millis() + DELETEDATAFILE_DELAY;
   }else if(deleteDataFile && isNow(next_canDeleteFileStorage)){
-    if(SPIFFS.begin()){
+    if(LittleFS.begin()){
       deleteDataFile=false;
-      SPIFFS.remove("dataStorage");
-      SPIFFS.end();
+      LittleFS.remove("dataStorage");
+      LittleFS.end();
       DEBUG_print("Data file removed.\n");
     }else{
       next_canDeleteFileStorage = millis() + DELETEDATAFILE_DELAY;
-      DEBUG_print("Cannot open SPIFFS!...\n");
+      DEBUG_print("Waiting for history deletion...\n");
     } }
     return deleteDataFile;
 } // C-- object... ;-)
-void deleteDataFile(bool b=false) {deleteSPIFFSDataFile(b);}
-bool isRemovingDataFile()         {return deleteSPIFFSDataFile(false);};
+void deleteDataFile(bool b=true)  {deleteLittleFSDataFile(b);}
+bool isRemovingDataFile()         {return deleteLittleFSDataFile(false);};
+void stopHistoryReset()           {deleteLittleFSDataFile(false, true);};
 
-inline ulong currentHour(const ulong& h=now()) {return ((h/3600UL )*3600UL );}
-inline ulong currentDay (const ulong& d=now()) {return ((d/86400UL)*86400UL);}
-
-bool reindexMap(){
-  if(isTimeSynchronized()){
-    if(dailyData.size()) while(!isTimeSynchronized(dailyData.begin()->first)){
-      std::pair<ulong,ulong> v(currentHour(dailyData.begin()->first+now()-millis()/1000UL), dailyData.begin()->second);
-      dailyData.erase(dailyData.begin()); dailyData.insert(v);
-    }return true;
+// *************************************** Measure **********************************************
+bool reindexMap(ulong t){
+  if( timeClient.isTimeSet() ){
+    std::map<ulong,ulong> buf;
+    while(dailyData.size()){
+      std::pair<ulong,ulong> val( currentTimeIntervalSec(dailyData.begin()->first), dailyData.begin()->second );
+      if( !isSynchronizedTime(val.first) ){
+        ulong delta(millis()/1000UL);
+        delta = ( (dailyData.begin()->first < delta) ? (delta - dailyData.begin()->first) : ( (-1UL - (dailyData.begin()->first*1000UL)) / 1000UL + delta) ); 
+        val.first = currentTimeIntervalSec( t - delta );
+      } buf[val.first] = val.second;
+      dailyData.erase(dailyData.begin());
+    }while(buf.size()) {dailyData[buf.begin()->first] = buf.begin()->second; buf.erase(buf.begin());}
+    return dailyData.size();
   }return false;
 }
 
-void dataFileWrite(){
-  DEBUG_print("Trying data file write...\n");
-  if(!isRemovingDataFile() && reindexMap()){
-    File f;
-    if(SPIFFS.begin() && (f=SPIFFS.open("dataStorage", "a"))){
-      while(dailyData.size()){
-        f.print(dailyData.begin()->first);
-        f.print(",");
-        f.print(dailyData.begin()->second);
-        f.print("\n");
-        dailyData.erase(dailyData.begin());
-      }f.close(); SPIFFS.end();
-      writeConfig();
-      DEBUG_print("SPIFFS Data writed.\n");
-    }else{
-      DEBUG_print("Cannot open data file!...\n");
+void dataFileWrite(ulong t){
+  if(KEEP_HISTORY){
+    DEBUG_print("Trying data write...\n");
+    if( !isRemovingDataFile() && reindexMap(t) ){
+      File f;
+      if( LittleFS.begin() && (f=LittleFS.open("dataStorage", "a")) ){
+        while( dailyData.size() && dailyData.begin()->first != currentTimeIntervalSec(t) ){
+          f.print(dailyData.begin()->first);
+          f.print(",");
+          f.print(dailyData.begin()->second);
+          f.print("\n");
+          dailyData.erase(dailyData.begin());
+        }f.close(); LittleFS.end();
+        writeConfig();
+        DEBUG_print("LittleFS Data writed.\n");
+      }else{
+        DEBUG_print("Cannot open data file!...\n");
+} } } }
+
+void pushData(){   // One measurement each MEASUREMENT_INTERVAL_SEC :
+  static ulong next_pushData(maxConsumTime);
+  if( isNow(next_pushData) ){ // It's time to write index to memory :
+    ulong t(Now());
+    next_pushData = ((millis() + next_leakDetected) / next_leakDetected) * next_leakDetected;
+    dailyData[currentTimeIntervalSec(t)] = deciliterCounter;
+
+    if( (currentTimeIntervalSec(t)+MEASUREMENT_INTERVAL_SEC-t) <= next_leakDetected ){ // It's time to write index to SD :
+      dataFileWrite(t);
+
+      mqttNotifyIndex();
+
+      if(isLightSleepAllowed() && !leakStatus)
+        setConnectionStandby( awakeDelay, (maxConsumTime-awakeDelay) );
 } } }
 
-void pushData(){   // Each hour...
-  static ulong previousValue=counterDlValue, next_pushData=PUSHDATA_DELAY*1000UL;
-  if(isNow(next_pushData)){
-    ulong sec(now());
-    DEBUG_print("Look for pushing data...\n");
-    if((sec-=currentHour(sec))<PUSHDATA_DELAY*2L && previousValue!=counterDlValue){ //Only on changed value...
-      dailyData[currentHour(now())]=previousValue=counterDlValue;
-      DEBUG_print("Data pushed.\n");
-      if(isTimeSynchronized()){
-        mqttNotifyIndex();
-        next_lightSleep = millis() + awakeTime/2;
-      }dataFileWrite();
-    }next_pushData = millis() + (isTimeSynchronized() ?((3600UL - sec)*1000UL) :(PUSHDATA_DELAY*1000UL));
-  }deleteDataFile();
-  if(lightSleepAllowed && next_lightSleep && isNow(next_lightSleep) ){
-    WiFiDisconnect( (3600UL-awakeTime/2-now()-currentHour())*1000UL );
-    if(true) {WiFiDisconnect(); WiFi.mode(WIFI_OFF); WiFi.forceSleepBegin(); delay(1);}
-} }
-
 //Gestion des switchs/Switchs management
-void ICACHE_RAM_ATTR counterInterrupt(){intr=true;}
+void IRAM_ATTR counterInterrupt(){intr=true;}
 
 void interruptTreatment(){
   if(intr){
     delay(DEBOUNCE_DELAY);
     if(!digitalRead(COUNTERPIN)){ //Counter++ on falling pin...
-      counterDlValue+=pulseValue;
-      DEBUG_print("Counter: " + String(counterLiterValue, DEC) + "\n");
+      deciliterCounter+=pulseValue;
+      DEBUG_print("Counter: " + String(deciliterCounter, DEC) + "\n");
       next_leakCheck=millis() + maxConsumTime;
       intr=false;
 } } }
@@ -1020,44 +1062,34 @@ void setup(){
   // Servers:
   WiFi.softAPdisconnect(); WiFiDisconnect(5000L);
   //Definition des URLs d'entree /Input URL definitions
-  ESPWebServer.on("/",                 [](){handleRoot(); ESPWebServer.client().stop();});
-  ESPWebServer.on("/status",           [](){setIndex();   ESPWebServer.send(200, "text/plain", getStatus());});
-  ESPWebServer.on("/getCurrentIndex",  [](){setIndex();   ESPWebServer.send(200, "text/plain", "[" + String(now(), DEC) + "," + getM3Counter() + "]");});
-  ESPWebServer.on("/getData",          [](){if(authorizedIP()){getHistoric();          }else ESPWebServer.send(403, "text/plain", "403: access denied");});
-  ESPWebServer.on("/getCurrentRecords",[](){if(authorizedIP()){getDayRecords();        }else ESPWebServer.send(403, "text/plain", "403: access denied");});
-  ESPWebServer.on("/resetHistoric",    [](){if(authorizedIP()){deleteDataFile();       ESPWebServer.send(200, "text/plain", "Ok");}else ESPWebServer.send(403, "text/plain", "403: access denied");});
-  ESPWebServer.on("/modemSleepAllowed",[](){if(authorizedIP()){lightSleepAllowed=true; ESPWebServer.send(200, "text/plain", "Ok");}else ESPWebServer.send(403, "text/plain", "403: access denied");});
-  ESPWebServer.on("/modemSleepDenied", [](){if(authorizedIP()){lightSleepAllowed=false;ESPWebServer.send(200, "text/plain", "Ok");}else ESPWebServer.send(403, "text/plain", "403: access denied");});
-  ESPWebServer.on("/restart",          [](){if(authorizedIP()){reboot();               }else ESPWebServer.send(403, "text/plain", "403: access denied");});
+  ESPWebServer.on("/",                 [](){handleRoot(); setConnectionStandby(awakeDelay);ESPWebServer.client().stop();});
+  ESPWebServer.on("/status",           [](){setIndex();   setConnectionStandby(awakeDelay);ESPWebServer.send(200, "json/plain", getStatus());});
+  ESPWebServer.on("/getCurrentIndex",  [](){setIndex();   setConnectionStandby(awakeDelay);ESPWebServer.send(200, "text/plain", "[" + String(Now(), DEC) + "," + getM3Counter() + "]");});
+  ESPWebServer.on("/getData",          [](){if(authorizedIP()){getHistory();                   setConnectionStandby(awakeDelay);                                     }else ESPWebServer.send(403, "text/plain", "403: access denied");});
+  ESPWebServer.on("/getCurrentRecords",[](){if(authorizedIP()){getDayRecords();                setConnectionStandby(awakeDelay);                                     }else ESPWebServer.send(403, "text/plain", "403: access denied");});
+  ESPWebServer.on("/resetHistory",     [](){if(authorizedIP()){getHistory(); deleteDataFile(); setConnectionStandby(awakeDelay);                                     }else ESPWebServer.send(403, "text/plain", "403: access denied");});
+  ESPWebServer.on("/stopHistoryReset", [](){if(authorizedIP()){stopHistoryReset();      ESPWebServer.send(200, "text/plain", "Ok"); setConnectionStandby(awakeDelay);}else ESPWebServer.send(403, "text/plain", "403: access denied");});
+  ESPWebServer.on("/modemSleepAllowed",[](){if(authorizedIP()){setLightSleep();         ESPWebServer.send(200, "text/plain", "Ok"); setConnectionStandby(awakeDelay);}else ESPWebServer.send(403, "text/plain", "403: access denied");});
+  ESPWebServer.on("/modemSleepDenied", [](){if(authorizedIP()){unsetLightSleep();       ESPWebServer.send(200, "text/plain", "Ok"); setConnectionStandby(awakeDelay);}else ESPWebServer.send(403, "text/plain", "403: access denied");});
+  ESPWebServer.on("/restart",          [](){if(authorizedIP()){reboot();                                                                                             }else ESPWebServer.send(403, "text/plain", "403: access denied");});
 //ESPWebServer.on("/about",            [](){ ESPWebServer.send(200, "text/plain", getHelp()); });
-  ESPWebServer.onNotFound(             [](){ESPWebServer.send(404, "text/plain", "404: Not found");});
+  ESPWebServer.onNotFound(             [](){ESPWebServer.send(404, "text/plain", "404: Not found"); setConnectionStandby(awakeDelay);});
 
   httpUpdater.setup(&ESPWebServer);  //Adds OnTheAir updates
   ESPWebServer.begin();              //Demarrage du serveur web /Web server start
   Serial_print("HTTP server started\n");
 
-  NTP.begin(ntpServer, localTimeZone, daylight);
-  NTP.setInterval(NTP_INTERVAL);
+  MDNS.begin(hostname.c_str());
+  MDNS.addService("http", "tcp", 80);
 
-#ifdef DEBUG
-  NTP.onNTPSyncEvent([](NTPSyncEvent_t error) {
-    if (error) {
-      DEBUG_print("Time Sync error: ");
-      if (error == noResponse){
-        DEBUG_print("NTP server not reachable\n");
-      }else if (error == invalidAddress){
-        DEBUG_print("Invalid NTP server address\n");
-      }else{
-        DEBUG_print(error);DEBUG_print("\n");
-      }
-    }else {
-      DEBUG_print("Got NTP time: ");
-      DEBUG_print(NTP.getTimeDateString(NTP.getLastNTPSync()));
-      DEBUG_print("\n");
-    }
-  });
-#endif
-  NTP.getTime();
+  timeClient.setPoolServerName(ntpServer.c_str());
+  timeClient.setUpdateInterval(NTP_UPDATE_INTERVAL_MS*1000UL);
+  //timeClient.setTimeOffset(3600 * localTimeZone);
+  dstRule.offset = 60 * (localTimeZone - daylight);
+  stdRule.offset = 60 * localTimeZone;
+  myTZ = new Timezone(dstRule, stdRule);
+  //myTZ->setRules(dstRule, stdRule);
+  timeClient.begin();
 }
 
 // **************************************** LOOP *************************************************
@@ -1068,5 +1100,7 @@ void loop(){
   interruptTreatment();                 //Gestion du compteur/Counter management
   pushData();                           //add data
   leakChecker();                        //Check for leaks...
+  connectionStandby();
+
  }
 // ***********************************************************************************************
