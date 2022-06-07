@@ -712,17 +712,17 @@ void connectionTreatment(){                              //Test connexion/Check 
 } }
 
 String getConfig(String s)                                  {return "\""+s+"\"";}
-template<typename T> String getConfig(String n, T v)        {return "\""+n+"\":"+String(v)+",";}
-template<> String getConfig(String s, String v)             {return "\""+s+"\":\""+String(v)+"\",";}
+template<typename T> String getConfig(T v)                  {return String(v);}
+template<typename T> String getConfig(String n, T v)        {return getConfig(n)+":"+getConfig(v);}
 String getStatus(){
-  String s('{');
-  s+=getConfig("version",           String(VERSION));
-  s+=getConfig("uptime",            millis());
-  s+=getConfig("index",             "[" + String(now(), DEC) + "," + getM3Counter() + "]");
-  s+=getConfig("counterLiterValue", String(counterDlValue/10.0,1));
-  s+=getConfig("leakStatus",        leakStatus);
-  s[s.length()-1]='}';
-  return s;
+  return(
+    "{" + getConfig("version",           String(VERSION))
+  + "," + getConfig("uptime",            millis())
+  + "," + getConfig(String("index")) + ":[" + String(Now(), DEC) + "," + getM3Counter() + "]"
+  + "," + getConfig("counterLiterValue", String(deciliterCounter/10.0,1))
+  + "," + getConfig("leakStatus",        leakStatus)
+  + "}"
+  );
 }
 
 void handleSubmitSSIDConf(){                              //Setting:
