@@ -10,7 +10,7 @@
 #define WIFIAPDELAYRETRY        300000UL
 #define MEMORYLEAKS             5000L
 #define SSIDCount()             3
-#define WEB_REFRESH_PERIOD      20                  //(s)
+#define WEB_REFRESH_DELAY       20                  //(s)
 
 #define DEFAULTTIMEZONE         -10
 #define DEFAULTNTPSERVER       "pool.ntp.org"
@@ -22,7 +22,7 @@ TimeChangeRule stdRule = {"CET",  Last, Sun, Oct, 1,  DEFAULTTIMEZONE * 60};
 #define MEASUREMENT_INTERVAL    3600UL              //(s) index reading interval
 #define AWAKEDELAY              MINIMUM_DELAY       //can be set in (s) : Delay before deep sleep after each measuremen...
                                                     //Allow WEB access when sleep option on,
-                                                    // each http request renews the time (nota: the WEB interface refreshes every WEB_REFRESH_PERIOD s).
+                                                    // each http request renews the time (nota: the WEB interface refreshes every WEB_REFRESH_DELAY s).
 #define COUNTERPIN              D5
 #define DEBOUNCE_DELAY          50UL                //(ms)
 #define PULSE_VALUE             10UL                //Deciliter per pulse...

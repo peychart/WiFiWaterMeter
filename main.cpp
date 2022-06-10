@@ -20,11 +20,12 @@
 #include <vector>
 #include <map>
 
-#define MINIMUM_DELAY                 120UL
+#define MINIMUM_DELAY                 120UL  //(s)
 #include "setting.h"   //Can be adjusted according to the project...
 
 //Avoid to change the following:
-#define ulong                         long unsigned int
+typedef long unsigned int             ulong;
+typedef short unsigned int            ushort;
 #define INFINY                        60000UL
 String                                hostname(DEFAULTHOSTNAME);    //Can be change by interface
 String                                ssid[SSIDCount()];            //Identifiants WiFi /Wifi idents
@@ -36,16 +37,15 @@ bool                                  WiFiAP(false), daylight(DEFAULTDAYLIGHT);
 #ifdef DEFAULTWIFIPASS
   ushort                              nbWifiAttempts(MAXWIFIRETRY), WifiAPTimeout(0);
 #endif
-#define MIN_LEAKNOTIF_PERIOD          3600000UL
-#define MAX_LEAKNOTIF_PERIOD          25200000UL
-#define MIN_MAXCONSUM_TIME            300000UL
-#define MAX_MAXCONSUM_TIME            3600000UL
-#define PUSHDATA_DELAY_SEC            30UL
-#define MEASUREMENT_INTERVAL_SEC      max(300UL,MEASUREMENT_INTERVAL)
-ulong                                 next_reconnect(0UL),
-                                      next_leakCheck(0UL), next_leakDetected(MIN_LEAKNOTIF_PERIOD),
-                                      leakNotifPeriod(MIN_LEAKNOTIF_PERIOD), maxConsumTime(MIN_MAXCONSUM_TIME),
-                                      awakeDelay(max(AWAKEDELAY, MINIMUM_DELAY) * 1000UL);
+#define MIN_LEAKNOTIF_DELAY           3600000UL   //1h
+#define MAX_LEAKNOTIF_DELAY           25200000UL  //7h
+#define MIN_MAXCONSUM_DELAY           300000UL    //5mn
+#define MAX_MAXCONSUM_DELAY           3600000UL   //1h
+#define MIN_MEASUR_PUB_INTERVAL       3600000UL   //1h
+#define MEASUREMENT_INTERVAL_SEC      max(MIN_MEASUR_PUB_INTERVAL, MEASUREMENT_INTERVAL)
+ulong                                 awakeDelay(max(AWAKEDELAY, MINIMUM_DELAY) * 1000UL),
+                                      next_leakCheck(0UL), next_leakPublication(MIN_LEAKNOTIF_DELAY),
+                                      leakNotifDelay(MIN_LEAKNOTIF_DELAY), maxConsumTime(MIN_MAXCONSUM_DELAY);
 ushort                                leakStatus(0);
 const ushort                          UnitDisplay=min(1000L,max(UNIT_DISPLAY,1L));
 volatile bool                         intr(false);
@@ -62,9 +62,9 @@ std::vector<std::vector<String>>      mqttFieldName, mqttValue;
 std::vector<std::vector<ushort>>      mqttNature, mqttType;
 std::vector<ushort>                   mqttEnable(0);
 
-WiFiUDP ntpUDP;
-NTPClient timeClient(ntpUDP);
-Timezone *myTZ;
+WiFiUDP                               ntpUDP;
+NTPClient                             timeClient(ntpUDP);
+Timezone                             *myTZ;
 
 #define Serial_print(m)              {if(Serial) Serial.print(m);}
 #define Serial_printf(m,n)           {if(Serial) Serial.printf(m,n);}
@@ -85,25 +85,40 @@ Timezone *myTZ;
 
 #define WIFI_STA_Connected()         (WiFi.status()==WL_CONNECTED)
 
-bool notifyProxy(ushort, String="");
-bool readConfig(bool=true);
-void writeConfig();
+bool  notifyProxy(ushort, String="");
+bool  readConfig(bool=true);
+void  writeConfig();
 ulong time(bool=false);
+bool  isLightSleepAllowed(unsigned char = 0);
+void  pushData( bool = false);
 
 inline bool   isNow(ulong v) {ulong ms(millis()); return((v<ms) && (ms-v)<INFINY);}  //Because of millis() rollover:
 inline String getM3Counter(ulong c=deciliterCounter){return String(c*UnitDisplay/10000.0, 3-log(UnitDisplay));}
 inline ulong  Now() {return( timeClient.isTimeSet() ?myTZ->toLocal(timeClient.getEpochTime()) :(millis()/1000UL) );}
 inline bool   isSynchronizedTime(ulong t) {return(t>-1UL/10UL);}
-inline ulong  currentTimeIntervalSec(const ulong& h=Now()) {return( (h/MEASUREMENT_INTERVAL_SEC)*MEASUREMENT_INTERVAL_SEC );}
+inline ulong  MeasurementInterval(const ulong& t=Now()) {return( (t/MEASUREMENT_INTERVAL_SEC)*MEASUREMENT_INTERVAL_SEC + MEASUREMENT_INTERVAL_SEC);}
 
-void unsetConnectionStandby();
+bool isDisconnectDelay(bool set=false, bool value=true){
+  static ulong next_disconnectDelay(0UL);
+  if(!set){
+    if( isNow(next_leakPublication - MINIMUM_DELAY) || (leakStatus && isNow(next_leakCheck - MINIMUM_DELAY))){
+      isDisconnectDelay(true);
+      return false;
+    }return(!leakStatus && next_disconnectDelay && isNow(next_disconnectDelay));
+  }if(value){
+    next_disconnectDelay = 0UL;
+    if(isLightSleepAllowed() && !(next_disconnectDelay = millis() + awakeDelay))
+      next_disconnectDelay++;
+  }return true;
+}inline void resetDisconnectDelay() {isDisconnectDelay(true);}
+ inline void unsetDisconnectDelay() {isDisconnectDelay(true,false);}
 
-bool isLightSleepAllowed(unsigned char b=0) {
+bool isLightSleepAllowed(unsigned char b) {
   static bool lightSleepAllowed(false);
   if(b--) lightSleepAllowed = b;
   return lightSleepAllowed;
-}inline void setLightSleep()   {isLightSleepAllowed(2); unsetConnectionStandby();}
- inline void unsetLightSleep() {isLightSleepAllowed(1); unsetConnectionStandby();}
+}inline void setLightSleep()        {isLightSleepAllowed(2); resetDisconnectDelay();}
+ inline void unsetLightSleep()      {isLightSleepAllowed(1); resetDisconnectDelay();}
 
 bool addMQTT(ushort i, ushort j){
   bool isNew(false);
@@ -275,11 +290,11 @@ As long as no SSID is set and it is not connected to a master, the device acts a
 <tr><td id='param1' style='text-align:center;'><div style='display:inline-block;'>");
     sendHTML_inputText(F("counterName"), counterName, F("style='width:120px;'"));
     WEB_F("</div><div style='display:none;'>");
-    sendHTML_inputNumber(F("leakNotifPeriod"), String(leakNotifPeriod/3600000L, DEC), "min=" + String(MIN_LEAKNOTIF_PERIOD/3600000L, DEC) + " max=" + String(MAX_LEAKNOTIF_PERIOD/3600000L, DEC) + " style='width:50px;text-align:right;'");
+    sendHTML_inputNumber(F("leakNotifDelay"), String(leakNotifDelay/3600000L, DEC), "min=" + String(MIN_LEAKNOTIF_DELAY/3600000L, DEC) + " max=" + String(MAX_LEAKNOTIF_DELAY/3600000L, DEC) + " style='width:50px;text-align:right;'");
     WEB_F("h</div></td>\n<td id='param2' align=center><div style='display:inline-block;'>");
     sendHTML_inputNumber(F("pulseValue"), String(pulseValue, DEC), F("min=1 max=100 style='width:50px;text-align:right;'"));
     WEB_F("dl/pulse</div><div style='display:none;'>");
-    sendHTML_inputNumber(F("maxConsumTime"), String(maxConsumTime/60000L, DEC), "min=" + String(MIN_MAXCONSUM_TIME/60000L, DEC) + " max=" + String(MAX_MAXCONSUM_TIME/60000L, DEC) + " style='width:50px;text-align:right;'");
+    sendHTML_inputNumber(F("maxConsumTime"), String(maxConsumTime/60000L, DEC), "min=" + String(MIN_MAXCONSUM_DELAY/60000L, DEC) + " max=" + String(MAX_MAXCONSUM_DELAY/60000L, DEC) + " style='width:50px;text-align:right;'");
     WEB_F("mn</div></td>\n<td id='param3' align=center><div style='display:inline-block;'>");
     sendHTML_inputNumber(F("counterValue"), String(deciliterCounter/10.0, 1), F("min=0 max=999999999.9 style='width:85px;text-align:right;'"));
     WEB_F("liters</div><div style='display:none;'>");
@@ -318,7 +333,7 @@ var odometer;\n\
 this.timer=0;\n\
 function init(){try{odometer=new steelseries.Odometer('canvasOdometer', {'decimals':3});}catch(e){;};refresh(1);}\n\
 function refresh(v=");
-  WEB_S(String(WEB_REFRESH_PERIOD, DEC));
+  WEB_S(String(WEB_REFRESH_DELAY, DEC));
   WEB_F("){var e=document.getElementById('about');\n\
  clearTimeout(this.timer);if(e)e.style.display='none';\n\
  if(v>0)this.timer=setTimeout(function(){RequestDevice('status');refresh();},v*1000);\n\
@@ -416,11 +431,12 @@ function checkConfPopup(){var r;\n\
  if(document.getElementById('counterName').value==='')return false;\n\
  if(document.getElementById('pulseValue').value==='')return false;\n\
  if(document.getElementById('counterValue').value==='')return false;\n\
- if(document.getElementById('leakNotifPeriod').value==='')return false;\n\
+ if(document.getElementById('leakNotifDelay').value==='')return false;\n\
  if(document.getElementById('maxConsumTime').value==='')return false;\n\
  if(document.getElementById('leakMsg').value==='')return false;\n\
  if(!document.getElementById('mqttEnable').checked)return true;\n\
  if(document.getElementById('mqttBroker').value==='')return false;\n\
+ if(document.getElementById('mqttTopic').value==='')return false;\n\
  if(!(r=document.getElementById('mqttRaws').getElementsByTagName('TR').length-1)){\n\
   document.getElementById('mqttEnable').checked=false;\n\
   return true;\n\
@@ -508,7 +524,7 @@ void writeConfig(){                                     //Save current config:
     }f.println(counterName);
     f.println(deciliterCounter);
     f.println(pulseValue);
-    f.println(leakNotifPeriod);
+    f.println(leakNotifDelay);
     f.println(maxConsumTime);
     f.println(leakStatus);
     f.println(leakMsg);
@@ -516,11 +532,12 @@ void writeConfig(){                                     //Save current config:
     f.println(localTimeZone);
     f.println(daylight);
     f.println(isLightSleepAllowed());
-    f.println(dailyData.size());
+    /*f.println(dailyData.size());
     for (std::map<ulong,ulong>::const_iterator it=dailyData.begin(); it!=dailyData.end(); it++){
       f.println(it->first);
       f.println(it->second);
-    }//MQTT parameters:
+    }*/
+    //MQTT parameters:
     f.println(mqttBroker);
     f.println(mqttPort);
     f.println(mqttIdent);
@@ -573,7 +590,7 @@ bool readConfig(bool w){                                //Get config (return fal
   }isNew|=getConf(counterName, f, w);
   isNew|=getConf(deciliterCounter, f, w);
   isNew|=getConf(pulseValue, f, w);
-  isNew|=getConf(leakNotifPeriod, f, w);
+  isNew|=getConf(leakNotifDelay, f, w);
   isNew|=getConf(maxConsumTime, f, w);
   isNew|=getConf(leakStatus, f, w);
   isNew|=getConf(leakMsg, f, w);
@@ -581,14 +598,15 @@ bool readConfig(bool w){                                //Get config (return fal
   isNew|=getConf(localTimeZone, f, w);
   isNew|=getConf(daylight, f, w);
   {bool b(isLightSleepAllowed()); isNew|=getConf(b, f, w); if(b) setLightSleep(); else unsetLightSleep();}
-  ushort n=dailyData.size();
+  /*ushort n=dailyData.size();
   isNew|=getConf(n, f); dailyData.erase( dailyData.begin(), dailyData.end() );
   for(ushort i(0); (!isNew||w) && i<n; i++){
     std::pair<ulong,ulong> data;
     isNew|=getConf(data.first, f, w);
     isNew|=getConf(data.second, f, w);
     dailyData.insert(data);
-  }//MQTT parameters:
+  }*/
+  //MQTT parameters:
   isNew|=getConf(mqttBroker, f, w);
   isNew|=getConf(mqttPort, f, w);
   isNew|=getConf(mqttIdent, f, w);
@@ -630,14 +648,63 @@ bool WiFiHost(){
   return false;
 }
 
-void WiFiDisconnect(ulong duration=0L){
-  next_reconnect=millis()+max(WIFISTADELAYRETRY, duration);
-  if(WiFiAP || WIFI_STA_Connected())
+inline void reboot(){
+  pushData(true);
+  writeConfig();
+  ESP.restart();
+}
+
+inline void memoryTest(){
+#ifdef MEMORYLEAKS      //oberved on DNS server (bind9/NTP) errors -> reboot each ~30mn
+  ulong f=ESP.getFreeHeap();
+  if(f<MEMORYLEAKS) reboot();
+  DEBUG_print("FreeMem: " + String(f, DEC) + "\n");
+#endif
+}
+
+inline bool connected() {return(WiFiAP || WIFI_STA_Connected());}
+
+void WiFiDisconnect(){
+  if(connected())
     DEBUG_print("Wifi disconnected!...\n");
   WiFi.softAPdisconnect(); WiFi.disconnect(); WiFiAP=false;
   WiFi.mode(WIFI_OFF);
-  if(duration){
-    WiFi.forceSleepBegin(); delay(1L);
+  WiFi.forceSleepBegin(); delay(1L);
+  unsetDisconnectDelay();
+}
+
+inline void onWiFiConnect(){
+  timeClient.forceUpdate();
+  resetDisconnectDelay();
+#ifdef DEBUG
+  if(!WiFiAP){
+    telnetServer.begin();
+    telnetServer.setNoDelay(true);
+  }
+#endif
+}
+
+inline void ifConnected(){ // Every WIFISTADELAYRETRY
+  memoryTest();
+
+  if(isDisconnectDelay()){
+    WiFiDisconnect();
+  }else{
+    MDNS.update();
+    timeClient.update();
+
+#ifdef DEBUG
+    if(!WiFiAP){
+      if(telnetServer.hasClient()){  //Telnet client connection:
+        if (!telnetClient || !telnetClient.connected()){
+          if(telnetClient){
+            telnetClient.stop();
+            DEBUG_print("Telnet Client Stop\n");
+          }telnetClient=telnetServer.available();
+          telnetClient.flush();
+          DEBUG_print("Telnet client connected...\n");
+    } } }
+#endif
 } }
 
 bool WiFiConnect(){
@@ -662,8 +729,9 @@ bool WiFiConnect(){
       //Affichage de l'adresse IP /print IP address:
       DEBUG_print("WiFi connected\n");
       Serial_print("IP address: "); Serial_print(WiFi.localIP()); Serial_print(", dns: "); Serial_print(WiFi.dnsIP()); Serial_print("\n\n");
+      onWiFiConnect();
       return true;
-    } WiFi.disconnect();
+    }WiFi.disconnect();
   }
   nbWifiAttempts--;
   if(ssid[0].length()){
@@ -677,59 +745,16 @@ bool WiFiConnect(){
   return false;
 }
 
-inline void reboot(){writeConfig(); ESP.restart();}
-
-inline void memoryTest(){
-#ifdef MEMORYLEAKS      //oberved on DNS server (bind9/NTP) errors -> reboot each ~30mn
-  ulong f=ESP.getFreeHeap();
-  if(f<MEMORYLEAKS) reboot();
-  DEBUG_print("FreeMem: " + String(f, DEC) + "\n");
-#endif
-}
-
-inline void onConnect(){
-
-#ifdef DEBUG
-  if(!WiFiAP){
-    telnetServer.begin();
-    telnetServer.setNoDelay(true);
+void connectionMonitoring(){ //Test connexion/Check WiFi every mn:
+#ifdef DEFAULTWIFIPASS
+  static ulong next_connectionTest=0UL;
+  if(isNow(next_connectionTest)){
+    next_connectionTest = millis() + 60000UL;
+    if( connected() ) ifConnected();
+    else if(!isLightSleepAllowed() && nbWifiAttempts) WiFiConnect();
   }
 #endif
 }
-
-inline void ifConnected(){ // Every WIFISTADELAYRETRY
-  MDNS.update();
-  timeClient.update();
-
-#ifdef DEBUG
-  if(!WiFiAP){
-    if(telnetServer.hasClient()){  //Telnet client connection:
-      if (!telnetClient || !telnetClient.connected()){
-        if(telnetClient){
-          telnetClient.stop();
-          DEBUG_print("Telnet Client Stop\n");
-        }telnetClient=telnetServer.available();
-        telnetClient.flush();
-        DEBUG_print("New Telnet client connected...\n");
-  } } }
-#endif
-}
-
-inline bool isConnected() {return(WiFiAP || WIFI_STA_Connected());}
-
-void connectionTreatment(){ //Test connexion/Check WiFi every mn:
-  if(isNow(next_reconnect)){
-    next_reconnect=millis()+WIFISTADELAYRETRY;
-    memoryTest();
-
-#ifdef DEFAULTWIFIPASS
-    if( !isConnected() || (WiFiAP && ssid[0].length() && !WifiAPTimeout--) ){
-      if(WiFiConnect()){
-        onConnect();ifConnected();
-    } }
-    else ifConnected();
-#endif
-} }
 
 String getConfig(String s)                                  {return "\""+s+"\"";}
 template<typename T> String getConfig(T v)                  {return String(v);}
@@ -762,20 +787,20 @@ void handleSubmitSSIDConf(){                              //Setting:
 
 #define setMQTT_S(n,m) if(            ESPWebServer.arg(n)         !=m){m=     ESPWebServer.arg(n);         isNew=true;};
 #define setMQTT_N(n,m) if((ulong)atol(ESPWebServer.arg(n).c_str())!=m){m=atol(ESPWebServer.arg(n).c_str());isNew=true;};
-inline void check_leakNotifPeriod(){
-  leakNotifPeriod*=3600000L;
-  leakNotifPeriod=min(leakNotifPeriod, MAX_LEAKNOTIF_PERIOD);
-  leakNotifPeriod=max(leakNotifPeriod, MIN_LEAKNOTIF_PERIOD);
+inline void check_leakNotifDelay(){
+  leakNotifDelay*=3600000L;
+  leakNotifDelay=min(leakNotifDelay, MAX_LEAKNOTIF_DELAY);
+  leakNotifDelay=max(leakNotifDelay, MIN_LEAKNOTIF_DELAY);
 }inline void check_maxConsumTime(){
   maxConsumTime*=60000L;
-  maxConsumTime=min(maxConsumTime, MAX_MAXCONSUM_TIME);
-  maxConsumTime=max(maxConsumTime, MIN_MAXCONSUM_TIME);
+  maxConsumTime=min(maxConsumTime, MAX_MAXCONSUM_DELAY);
+  maxConsumTime=max(maxConsumTime, MIN_MAXCONSUM_DELAY);
 }bool handleSubmitMQTTConf(ushort n){
   bool isNew(false); String count(deciliterCounter/10.0, 1);
   setMQTT_S("counterName",       counterName    );
   setMQTT_S("counterValue",      count          ); deciliterCounter=(ulong)(atof(count.c_str())*10.0);
   setMQTT_N("pulseValue",        pulseValue     );
-  setMQTT_N("leakNotifPeriod",   leakNotifPeriod); check_leakNotifPeriod();
+  setMQTT_N("leakNotifDelay",    leakNotifDelay ); check_leakNotifDelay();
   setMQTT_N("maxConsumTime",     maxConsumTime  ); check_maxConsumTime();
   setMQTT_S("leakMsg",           leakMsg        );
   if((mqttEnable[n]=ESPWebServer.hasArg("mqttEnable"))){ushort i;
@@ -785,6 +810,7 @@ inline void check_leakNotifPeriod(){
     setMQTT_S("mqttIdent",       mqttIdent );
     setMQTT_S("mqttUser",        mqttUser  );
     setMQTT_S("mqttPwd",         mqttPwd   );
+    setMQTT_S("mqttTopic",       mqttQueue );
     for(i=0; ESPWebServer.hasArg("mqttFieldName"+String(i,DEC)); i++){
       isNew|=addMQTT(n, i);
       setMQTT_S("mqttFieldName"+String(i,DEC), mqttFieldName[n][i]);
@@ -835,55 +861,46 @@ void setIndex(){
       DEBUG_print("HTTP request on counter(" + counterName + ") value: " + String(val, DEC) + "...\n");
 } } }
 
-void connectionStandby(bool set=false, ulong next=0L, ulong duration=0L){
-  static ulong next_disconnect(0L), next_WiFiAwakening(0L);
-  if(isLightSleepAllowed()) { // Can be invalidated before triggering with (duration<MINIMUM_DELAY) ...
-    if(set) {
-      next_disconnect = next;
-      if(duration) next_WiFiAwakening=( isNow(millis()-next_WiFiAwakening+MINIMUM_DELAY*1000UL) ?duration :0UL);
-    }else if( next_WiFiAwakening && isNow(next_disconnect) ) {
-      WiFiDisconnect( next_WiFiAwakening );
-      next_WiFiAwakening=0L;
-  } }
-}inline void setConnectionStandby(ulong next, ulong duration=0L) {connectionStandby(true, next, duration);}
- inline void unsetConnectionStandby()                            {connectionStandby(true, 0L, millis());}
- inline void awakenConnection()                                  {if(isLightSleepAllowed()) unsetConnectionStandby(); if(!isConnected()) {next_reconnect=millis(); connectionTreatment();}}
-
 bool mqttNotify(ushort n){
-  awakenConnection(); 
-  if(isConnected()){
-    if(!mqttEnable[n]) return true;
-    if(mqttBroker.length()){
-      mqttClient.setServer(mqttBroker.c_str(), mqttPort);
-      if(!mqttClient.connected())
-        mqttClient.connect(mqttIdent.c_str(), mqttUser.c_str(), mqttPwd.c_str());
-      if(mqttClient.connected()){
-        String s="{";
-        for(ushort i(0); i<mqttEnable[n]; i++){
-          if(i) s+=",";
-          s+="\n \"" + mqttFieldName[n][i] + "\": ";
-          if(mqttType[n][i]==0) s+= "\"";   //type "String"
-          if(mqttNature[n][i]==0){          //Counter-value or Warning-level
-            if(n) s+=String(leakStatus, DEC);
-            else  s+=String(deciliterCounter/10.0, 1);
-          }else if(mqttNature[n][i]!=1)
-                s+=leakMsg;                 //Warning-message
-          else  s+=mqttValue[n][i];         //Constant
-          if(mqttType[n][i]==0) s+= "\"";
-        }if(s=="{"){
-          DEBUG_print("Nothing to published to \"" + mqttBroker + "\"!\n");
-          return false;
-        }s+="\n}\n";
-        mqttClient.publish(mqttQueue.c_str(), s.c_str());
-        DEBUG_print((n ?"Leak control message published to \"" :"Counter Value published to \"") + mqttBroker + "\".\n");
-        return true;
-    } }
+  if(!mqttEnable[n])
+    return true;
+  if(!connected() && !WiFiConnect()){
+    DEBUG_print("MQTT notification not enabled (no WiFi connection)...\n");
+    return false;
+  }
+  if(mqttBroker.length()){
+    mqttClient.setServer(mqttBroker.c_str(), mqttPort);
+    if(!mqttClient.connected())
+      mqttClient.connect(mqttIdent.c_str(), mqttUser.c_str(), mqttPwd.c_str());
+  }if(!mqttBroker.length() || !mqttClient.connected()){
     DEBUG_print("MQTT server \"" + mqttBroker + ":" + String(mqttPort,DEC) + "\" not found...\n");
     return false;
-  }DEBUG_print("MQTT notification not enabled (not connected)...\n");
-  return false;
+  }if(!timeClient.isTimeSet() && !n){
+    DEBUG_print("Time is not set, MQTT request aborted...\n");
+    return false;
+  }
+  
+  String s="{";
+  for(ushort i(0); i<mqttEnable[n]; i++){
+    if(i) s+=",";
+    s+="\n \"" + mqttFieldName[n][i] + "\": ";
+    if(mqttType[n][i]==0) s+= "\"";   //type "String"
+    if(mqttNature[n][i]==0){          //Counter-value or Warning-level
+      if(n) s+=String(leakStatus, DEC);
+      else  s+=String(deciliterCounter/10.0, 1);
+    }else if(mqttNature[n][i]!=1)
+          s+=leakMsg;                 //Warning-message
+    else  s+=mqttValue[n][i];         //Constant
+    if(mqttType[n][i]==0) s+= "\"";
+  }if(s=="{"){
+    DEBUG_print("Nothing to published to \"" + mqttBroker + "\"!\n");
+    return false;
+  }s+="\n}\n";
+  mqttClient.publish(mqttQueue.c_str(), s.c_str());
+  DEBUG_print((n ?"Leak control message published to \"" :"Counter Value published to \"") + mqttBroker + "\".\n");
+  return true;
 }inline bool mqttNotifyIndex  (void) {return(mqttNotify(0));}  //Volume notification
-inline  bool mqttNotifyWarning(void) {return(mqttNotify(1));}  //Possible leak warning
+ inline bool mqttNotifyWarning(void) {return(mqttNotify(1));}  //Possible leak warning
 
 void getData(std::map<ulong,ulong>& d){
   for(std::map<ulong,ulong>::const_iterator it=dailyData.begin(); it!=dailyData.end(); ){
@@ -950,29 +967,27 @@ bool isRemovingDataFile()         {return deleteLittleFSDataFile(false);};
 void stopHistoryReset()           {deleteLittleFSDataFile(false, true);};
 
 // *************************************** Measure **********************************************
-bool reindexMap(ulong t){
+bool reindexMap(ulong T, ulong m){
   if( timeClient.isTimeSet() ){
     std::map<ulong,ulong> buf;
     while(dailyData.size()){
-      std::pair<ulong,ulong> val( currentTimeIntervalSec(dailyData.begin()->first), dailyData.begin()->second );
-      if( !isSynchronizedTime(val.first) ){
-        ulong delta(millis()/1000UL);
-        delta = ( (dailyData.begin()->first < delta) ? (delta - dailyData.begin()->first) : ( (-1UL - (dailyData.begin()->first*1000UL)) / 1000UL + delta) ); 
-        val.first = currentTimeIntervalSec( t - delta );
-      } buf[val.first] = val.second;
-      dailyData.erase(dailyData.begin());
-    }while(buf.size()) {dailyData[buf.begin()->first] = buf.begin()->second; buf.erase(buf.begin());}
+      if( isSynchronizedTime(dailyData.begin()->first) )
+        buf[dailyData.begin()->first] = dailyData.begin()->second;
+      else if(dailyData.begin()->first < m)
+        buf[MeasurementInterval( (T - (m - dailyData.begin()->first)) )] = dailyData.begin()->second;
+      dailyData.erase(dailyData.begin()->first);
+    }while(buf.size()) {dailyData[buf.begin()->first] = buf.begin()->second; buf.erase(buf.begin());} //Low memory!
     return dailyData.size();
   }return false;
 }
 
-void dataFileWrite(ulong t){
+void dataFileWrite(ulong t, ulong m){
   if(KEEP_HISTORY){
     DEBUG_print("Trying data write...\n");
-    if( !isRemovingDataFile() && reindexMap(t) ){
+    if( !isRemovingDataFile() && reindexMap(t,m) ){
       File f;
       if( LittleFS.begin() && (f=LittleFS.open("dataStorage", "a")) ){
-        while( dailyData.size() && dailyData.begin()->first != currentTimeIntervalSec(t) ){
+        while( dailyData.size() && dailyData.begin()->first != t ){
           f.print(dailyData.begin()->first);
           f.print(",");
           f.print(dailyData.begin()->second);
@@ -985,20 +1000,18 @@ void dataFileWrite(ulong t){
         DEBUG_print("Cannot open data file!...\n");
 } } } }
 
-void pushData(){   // One measurement each MEASUREMENT_INTERVAL_SEC :
-  static ulong next_pushData(maxConsumTime);
-  if( isNow(next_pushData) ){ // It's time to write index to memory :
-    ulong t(Now());
-    next_pushData = ((millis() + next_leakDetected) / next_leakDetected) * next_leakDetected;
-    dailyData[currentTimeIntervalSec(t)] = deciliterCounter;
+void pushData(bool force){   //Do and Send the measurement each MEASUREMENT_INTERVAL_SEC :
+  static ulong next_pushData(0UL), next_MeasurementPublication(MEASUREMENT_INTERVAL_SEC);
+  const  ulong nextPushDelay(30000UL);
+  if( force || isNow(next_pushData) ){
+    ulong T(Now()), m(millis());
+    next_pushData = m + nextPushDelay;
+      dailyData[MeasurementInterval(T)] = deciliterCounter; // It's time to write index to memory...
 
-    if( (currentTimeIntervalSec(t)+MEASUREMENT_INTERVAL_SEC-t) <= next_leakDetected ){ // It's time to write index to SD :
-      dataFileWrite(t);
-
+    if( force || isNow(next_MeasurementPublication) ){
+      next_MeasurementPublication=m + MEASUREMENT_INTERVAL_SEC;
+      dataFileWrite(T, m); // It's time to write index to SD...
       mqttNotifyIndex();
-
-      if(isLightSleepAllowed() && !leakStatus)
-        setConnectionStandby( awakeDelay, (maxConsumTime-awakeDelay) );
 } } }
 
 //Gestion des switchs/Switchs management
@@ -1016,30 +1029,32 @@ void interruptTreatment(){
 
 #ifdef MAXCONSUMPTIONTIME_MEASURE
 void leakChecker(){
-  if(isNow(next_leakDetected)){  // ...in control period.
-    if(leakStatus>0) leakStatus--;
-    DEBUG_print("Leak notification!...\n");
-    mqttNotifyWarning();
-    next_leakDetected=millis() + leakNotifPeriod;
+  if(isNow(next_leakPublication)){  // ...in control period.
+    if(leakStatus>0){
+      leakStatus--;
+      DEBUG_print("Leak notification!...\n");
+      mqttNotifyWarning();
+    }next_leakPublication=millis() + leakNotifDelay;
   }if(isNow(next_leakCheck)){           // Minimal fixing time reached...
     if(leakStatus < MAXLEAKDETECT) leakStatus++;
     mqttNotifyWarning();
-    next_leakDetected=millis() + leakNotifPeriod;
+    next_leakPublication=millis() + leakNotifDelay;
     next_leakCheck=millis() + maxConsumTime;
 } }
 
 #else
 void leakChecker(){
   if(isNow(next_leakCheck)){           // Minimal fixing time reached...
-    if(leakStatus>0) leakStatus--;
-    mqttNotifyWarning();
-    next_leakDetected=millis() + leakNotifPeriod;
-    next_leakCheck=millis() + maxConsumTime;
-  }else if(isNow(next_leakDetected)){  // ...in control period.
+    if(leakStatus>0){
+      leakStatus--;
+      mqttNotifyWarning();
+      next_leakPublication=millis() + leakNotifDelay;
+    }next_leakCheck=millis() + maxConsumTime;
+  }else if(isNow(next_leakPublication)){  // ...in control period.
     if(leakStatus < MAXLEAKDETECT) leakStatus++;
     DEBUG_print("Leak notification!...\n");
     mqttNotifyWarning();
-    next_leakDetected=millis() + leakNotifPeriod;
+    next_leakPublication=millis() + leakNotifDelay;
 } }
 #endif
 
@@ -1060,20 +1075,20 @@ void setup(){
   attachInterrupt(digitalPinToInterrupt(COUNTERPIN), counterInterrupt, FALLING);
 
   // Servers:
-  WiFi.softAPdisconnect(); WiFiDisconnect(5000L);
+  WiFi.softAPdisconnect(); WiFiDisconnect();
   //Definition des URLs d'entree /Input URL definitions
-  ESPWebServer.on("/",                 [](){handleRoot(); setConnectionStandby(awakeDelay);ESPWebServer.client().stop();});
-  ESPWebServer.on("/status",           [](){setIndex();   setConnectionStandby(awakeDelay);ESPWebServer.send(200, "json/plain", getStatus());});
-  ESPWebServer.on("/getCurrentIndex",  [](){setIndex();   setConnectionStandby(awakeDelay);ESPWebServer.send(200, "text/plain", "[" + String(Now(), DEC) + "," + getM3Counter() + "]");});
-  ESPWebServer.on("/getData",          [](){if(authorizedIP()){getHistory();                   setConnectionStandby(awakeDelay);                                     }else ESPWebServer.send(403, "text/plain", "403: access denied");});
-  ESPWebServer.on("/getCurrentRecords",[](){if(authorizedIP()){getDayRecords();                setConnectionStandby(awakeDelay);                                     }else ESPWebServer.send(403, "text/plain", "403: access denied");});
-  ESPWebServer.on("/resetHistory",     [](){if(authorizedIP()){getHistory(); deleteDataFile(); setConnectionStandby(awakeDelay);                                     }else ESPWebServer.send(403, "text/plain", "403: access denied");});
-  ESPWebServer.on("/stopHistoryReset", [](){if(authorizedIP()){stopHistoryReset();      ESPWebServer.send(200, "text/plain", "Ok"); setConnectionStandby(awakeDelay);}else ESPWebServer.send(403, "text/plain", "403: access denied");});
-  ESPWebServer.on("/modemSleepAllowed",[](){if(authorizedIP()){setLightSleep();         ESPWebServer.send(200, "text/plain", "Ok"); setConnectionStandby(awakeDelay);}else ESPWebServer.send(403, "text/plain", "403: access denied");});
-  ESPWebServer.on("/modemSleepDenied", [](){if(authorizedIP()){unsetLightSleep();       ESPWebServer.send(200, "text/plain", "Ok"); setConnectionStandby(awakeDelay);}else ESPWebServer.send(403, "text/plain", "403: access denied");});
-  ESPWebServer.on("/restart",          [](){if(authorizedIP()){reboot();                                                                                             }else ESPWebServer.send(403, "text/plain", "403: access denied");});
+  ESPWebServer.on("/",                 [](){handleRoot(); resetDisconnectDelay();  ESPWebServer.client().stop();});
+  ESPWebServer.on("/status",           [](){setIndex();   resetDisconnectDelay();  ESPWebServer.send(200, "json/plain", getStatus());});
+  ESPWebServer.on("/getCurrentIndex",  [](){setIndex();   resetDisconnectDelay();  ESPWebServer.send(200, "text/plain", "[" + String(Now(), DEC) + "," + getM3Counter() + "]");});
+  ESPWebServer.on("/getData",          [](){if(authorizedIP()){getHistory();    resetDisconnectDelay();                                               }else ESPWebServer.send(403, "text/plain", "403: access denied");});
+  ESPWebServer.on("/getCurrentRecords",[](){if(authorizedIP()){getDayRecords(); resetDisconnectDelay();                                               }else ESPWebServer.send(403, "text/plain", "403: access denied");});
+  ESPWebServer.on("/resetHistory",     [](){if(authorizedIP()){getHistory(); deleteDataFile(); resetDisconnectDelay();                                }else ESPWebServer.send(403, "text/plain", "403: access denied");});
+  ESPWebServer.on("/stopHistoryReset", [](){if(authorizedIP()){stopHistoryReset(); ESPWebServer.send(200, "text/plain", "Ok"); resetDisconnectDelay();}else ESPWebServer.send(403, "text/plain", "403: access denied");});
+  ESPWebServer.on("/modemSleepAllowed",[](){if(authorizedIP()){setLightSleep();    ESPWebServer.send(200, "text/plain", "Ok"); resetDisconnectDelay();}else ESPWebServer.send(403, "text/plain", "403: access denied");});
+  ESPWebServer.on("/modemSleepDenied", [](){if(authorizedIP()){unsetLightSleep();  ESPWebServer.send(200, "text/plain", "Ok"); resetDisconnectDelay();}else ESPWebServer.send(403, "text/plain", "403: access denied");});
+  ESPWebServer.on("/restart",          [](){if(authorizedIP()){reboot();                                                                              }else ESPWebServer.send(403, "text/plain", "403: access denied");});
 //ESPWebServer.on("/about",            [](){ ESPWebServer.send(200, "text/plain", getHelp()); });
-  ESPWebServer.onNotFound(             [](){ESPWebServer.send(404, "text/plain", "404: Not found"); setConnectionStandby(awakeDelay);});
+  ESPWebServer.onNotFound(             [](){ESPWebServer.send(404, "text/plain", "404: Not found"); resetDisconnectDelay();});
 
   httpUpdater.setup(&ESPWebServer);  //Adds OnTheAir updates
   ESPWebServer.begin();              //Demarrage du serveur web /Web server start
@@ -1082,25 +1097,24 @@ void setup(){
   MDNS.begin(hostname.c_str());
   MDNS.addService("http", "tcp", 80);
 
-  timeClient.setPoolServerName(ntpServer.c_str());
-  timeClient.setUpdateInterval(NTP_UPDATE_INTERVAL_MS*1000UL);
-  //timeClient.setTimeOffset(3600 * localTimeZone);
-  dstRule.offset = 60 * (localTimeZone - daylight);
-  stdRule.offset = 60 * localTimeZone;
-  myTZ = new Timezone(dstRule, stdRule);
-  //myTZ->setRules(dstRule, stdRule);
-  timeClient.begin();
-}
+  if(ntpServer.length()){
+    timeClient.setPoolServerName(ntpServer.c_str());
+    timeClient.setUpdateInterval(NTP_UPDATE_INTERVAL_MS*1000UL);
+    //timeClient.setTimeOffset(3600 * localTimeZone);
+    dstRule.offset = 60 * (localTimeZone - daylight);
+    stdRule.offset = 60 * localTimeZone;
+    myTZ = new Timezone(dstRule, stdRule);
+    //myTZ->setRules(dstRule, stdRule);
+    timeClient.begin();
+} }
 
 // **************************************** LOOP *************************************************
 void loop(){
+  connectionMonitoring();
   ESPWebServer.handleClient(); delay(1L);
 
-  connectionTreatment();                //WiFi watcher
   interruptTreatment();                 //Gestion du compteur/Counter management
   pushData();                           //add data
   leakChecker();                        //Check for leaks...
-  connectionStandby();
-
  }
 // ***********************************************************************************************
