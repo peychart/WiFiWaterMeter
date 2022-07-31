@@ -43,7 +43,7 @@ Http requests available (except from EXCLUDED_IPV4_FROM_TUNE):
     <td>not yet indexed measures (on NTP error)</td>
   </tr>
   <tr>
-    <td><tt>http://IPAddress/resetHistoric</tt></td>
+    <td><tt>http://IPAddress/resetHistory</tt></td>
     <td>current data file will be erased after DELETEDATAFILE_DELAY (ms)</td>
   </tr>
   <tr>
