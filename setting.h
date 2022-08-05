@@ -45,4 +45,4 @@ TimeChangeRule stdRule = {"CET",  Last, Sun, Oct, 1,  DEFAULTTIMEZONE * 60};
 #define DEFAULT_MQTT_PWD       ""
 #define DEFAULT_MQTT_QUEUE     "domoticz/in"
 
-#define BACKGROUND_IMAGE       "https://static.mycity.travel/manage/uploads/7/36/12705/989bd67a1aad43055bd0322e9694f8dd8fab2b43_1080.jpg"
+#define BACKGROUND_IMAGE       "https://cascadesdefrance.fr/wp-content/uploads/2016/06/Briard_160519_3730.jpg"
